@@ -3,6 +3,8 @@
 
 #include "nvs_flash.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include <cstring>
 #include <string>
 #include <type_traits>
@@ -14,6 +16,8 @@ class NVSProxy {
     nvs_handle_t handle = 0;
     const char* namespace_name;
     bool is_readonly;
+
+    SemaphoreHandle_t mutex = nullptr;
 
   public:
     NVSProxy(const char* namespace_name, bool readonly = true);
@@ -30,27 +34,42 @@ class NVSProxy {
     }
 
     bool commit() {
+      if (mutex == nullptr || xSemaphoreTake(mutex, pdMS_TO_TICKS(3000)) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to take mutex in commit()");
+        return false;
+      }
+
+      bool result = false;
       if (handle == 0 || is_readonly) {
         ESP_LOGW(TAG, "Cannot commit: handle not open or readonly");
-        return false;
+      } else {
+        esp_err_t err = nvs_commit(handle);
+        if (err != ESP_OK) {
+          ESP_LOGE(TAG, "Failed to commit: %s", esp_err_to_name(err));
+        } else {
+          result = true;
+        }
       }
-      esp_err_t err = nvs_commit(handle);
-      if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to commit: %s", esp_err_to_name(err));
-        return false;
-      }
-      return true;
+      
+      xSemaphoreGive(mutex);
+      return result;
     }
 
     template<typename T>
     T get(const char* key, T default_value = T{}) {
-      if (handle == 0) {
-        ESP_LOGW(TAG, "NVS not open, returning default for key '%s'", key);
+      if (mutex == nullptr || xSemaphoreTake(mutex, pdMS_TO_TICKS(3000)) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to take mutex in get()");
         return default_value;
       }
 
       T value;
       esp_err_t err;
+
+      if (handle == 0) {
+        ESP_LOGW(TAG, "NVS not open, returning default for key '%s'", key);
+        xSemaphoreGive(mutex);
+        return default_value;
+      }
 
       if constexpr (std::is_same_v<T, uint8_t>) {
         err = nvs_get_u8(handle, key, &value);
@@ -72,6 +91,8 @@ class NVSProxy {
         static_assert(sizeof(T) == 0, "Unsupported type for NVS get");
       }
 
+      xSemaphoreGive(mutex);
+
       if (err == ESP_OK) {
         return value;
       }
@@ -83,14 +104,21 @@ class NVSProxy {
     }
 
     std::string get(const char* key, std::string default_value = "") {
+      if (mutex == nullptr || xSemaphoreTake(mutex, pdMS_TO_TICKS(3000)) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to take mutex in get()");
+        return default_value;
+      }
+
       if (handle == 0) {
         ESP_LOGW(TAG, "NVS not open, returning default for key '%s'", key);
+        xSemaphoreGive(mutex);
         return default_value;
       }
 
       size_t length = 0;
       esp_err_t err = nvs_get_str(handle, key, NULL, &length);
       if (err != ESP_OK) {
+        xSemaphoreGive(mutex);
         if (err != ESP_ERR_NVS_NOT_FOUND) {
           ESP_LOGW(TAG, "Failed to get key '%s': %s", key, esp_err_to_name(err));
         }
@@ -100,6 +128,9 @@ class NVSProxy {
       std::string result;
       result.resize(length);
       err = nvs_get_str(handle, key, result.data(), &length);
+      
+      xSemaphoreGive(mutex);
+      
       if (err != ESP_OK) {
         return default_value;
       }
@@ -109,13 +140,20 @@ class NVSProxy {
 
     template<typename T>
     bool set(const char* key, T value, bool commit = false) {
+      if (mutex == nullptr || xSemaphoreTake(mutex, pdMS_TO_TICKS(3000)) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to take mutex in set()");
+        return false;
+      }
+
       nvs_handle_t write_handle = handle;
       bool need_close = false;
+      bool result = false;
       
       if (is_readonly || handle == 0) {
         esp_err_t err = nvs_open(namespace_name, NVS_READWRITE, &write_handle);
         if (err != ESP_OK) {
           ESP_LOGE(TAG, "Failed to open NVS for writing: %s", esp_err_to_name(err));
+          xSemaphoreGive(mutex);
           return false;
         }
         need_close = true;
@@ -143,20 +181,22 @@ class NVSProxy {
         static_assert(sizeof(T) == 0, "Unsupported type for NVS set");
       }
 
-      if (commit && err == ESP_OK) {
+      if (err == ESP_OK && commit) {
         err = nvs_commit(write_handle);
+      }
+
+      if (err == ESP_OK) {
+        result = true;
+      } else {
+        ESP_LOGE(TAG, "Failed to set key '%s': %s", key, esp_err_to_name(err));
       }
 
       if (need_close && write_handle != 0) {
         nvs_close(write_handle);
       }
 
-      if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to set key '%s': %s", key, esp_err_to_name(err));
-        return false;
-      }
-
-      return true;
+      xSemaphoreGive(mutex);
+      return result;
     }
 
     bool set(const char* key, const std::string& value, bool commit = false) {
@@ -168,33 +208,42 @@ class NVSProxy {
     }
 
     bool set_string(const char* key, const char* value, bool commit = false) {
+      if (mutex == nullptr || xSemaphoreTake(mutex, pdMS_TO_TICKS(3000)) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to take mutex in set_string()");
+        return false;
+      }
+
       nvs_handle_t write_handle = handle;
       bool need_close = false;
+      bool result = false;
       
       if (is_readonly || handle == 0) {
         esp_err_t err = nvs_open(namespace_name, NVS_READWRITE, &write_handle);
         if (err != ESP_OK) {
           ESP_LOGE(TAG, "Failed to open NVS for writing: %s", esp_err_to_name(err));
+          xSemaphoreGive(mutex);
           return false;
         }
         need_close = true;
       }
 
       esp_err_t err = nvs_set_str(write_handle, key, value);
-      if (commit && err == ESP_OK) {
+      if (err == ESP_OK && commit) {
         err = nvs_commit(write_handle);
+      }
+
+      if (err == ESP_OK) {
+        result = true;
+      } else {
+        ESP_LOGE(TAG, "Failed to set string key '%s': %s", key, esp_err_to_name(err));
       }
 
       if (need_close && write_handle != 0) {
         nvs_close(write_handle);
       }
 
-      if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to set string key '%s': %s", key, esp_err_to_name(err));
-        return false;
-      }
-
-      return true;
+      xSemaphoreGive(mutex);
+      return result;
     }
 
     template<typename T>
@@ -221,49 +270,65 @@ class NVSProxy {
     }
 
     bool set_blob(const char* key, const void* data, size_t size, bool commit = false) {
+      if (mutex == nullptr || xSemaphoreTake(mutex, pdMS_TO_TICKS(3000)) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to take mutex in set_blob()");
+        return false;
+      }
+
       nvs_handle_t write_handle = handle;
       bool need_close = false;
+      bool result = false;
       
       if (is_readonly || handle == 0) {
         esp_err_t err = nvs_open(namespace_name, NVS_READWRITE, &write_handle);
         if (err != ESP_OK) {
           ESP_LOGE(TAG, "Failed to open NVS for writing: %s", esp_err_to_name(err));
+          xSemaphoreGive(mutex);
           return false;
         }
         need_close = true;
       }
 
       esp_err_t err = nvs_set_blob(write_handle, key, data, size);
-      if (commit && err == ESP_OK) {
+      if (err == ESP_OK && commit) {
         err = nvs_commit(write_handle);
+      }
+
+      if (err == ESP_OK) {
+        result = true;
+      } else {
+        ESP_LOGE(TAG, "Failed to set blob key '%s': %s", key, esp_err_to_name(err));
       }
 
       if (need_close && write_handle != 0) {
         nvs_close(write_handle);
       }
 
-      if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to set blob key '%s': %s", key, esp_err_to_name(err));
-        return false;
-      }
-
-      return true;
+      xSemaphoreGive(mutex);
+      return result;
     }
 
     bool get_blob(const char* key, void* out_data, size_t& size) {
-      if (handle == 0) {
-        ESP_LOGW(TAG, "NVS not open for blob key '%s'", key);
+      if (mutex == nullptr || xSemaphoreTake(mutex, pdMS_TO_TICKS(3000)) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to take mutex in get_blob()");
         return false;
       }
 
-      esp_err_t err = nvs_get_blob(handle, key, out_data, &size);
-      if (err != ESP_OK) {
-        if (err != ESP_ERR_NVS_NOT_FOUND) {
+      bool result = false;
+      
+      if (handle == 0) {
+        ESP_LOGW(TAG, "NVS not open for blob key '%s'", key);
+      } else {
+        esp_err_t err = nvs_get_blob(handle, key, out_data, &size);
+        if (err == ESP_OK) {
+          result = true;
+        } else if (err != ESP_ERR_NVS_NOT_FOUND) {
           ESP_LOGW(TAG, "Failed to get blob key '%s': %s", key, esp_err_to_name(err));
         }
-        return false;
       }
-      return true;
+      
+      xSemaphoreGive(mutex);
+      return result;
     }
 
     bool is_open() const { return handle != 0; }
@@ -271,9 +336,17 @@ class NVSProxy {
     bool exists(const char* key) {
       if (!is_open()) return false;
 
+      if (mutex == nullptr || xSemaphoreTake(mutex, pdMS_TO_TICKS(3000)) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to take mutex in exists()");
+        return false;
+      }
+
       uint8_t temp;
       esp_err_t err = nvs_get_u8(handle, key, &temp);
-      return (err == ESP_OK);
+      bool result = (err == ESP_OK);
+      
+      xSemaphoreGive(mutex);
+      return result;
     }
 };
 

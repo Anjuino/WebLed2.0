@@ -2,7 +2,8 @@
 #define LED_H
 
 #include "led_strip.h"
-#include "freertos/FreeRTOS.h" 
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "esp_log.h"
 #include "nvs_proxy.h"
 #include <cstring>
@@ -27,6 +28,7 @@ class led {
 
     led_strip_handle_t led_strip = nullptr;
     uint8_t* color_buffer = nullptr;
+    SemaphoreHandle_t mutex = nullptr;
 
     uint16_t led_count = 1;
     uint8_t speed = 20;

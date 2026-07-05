@@ -3,6 +3,7 @@
 NVSProxy::NVSProxy(const char* namespace_name, bool readonly)
     : namespace_name(namespace_name), is_readonly(readonly) 
 {
+  mutex = xSemaphoreCreateMutex();
   nvs_open_mode_t mode = readonly ? NVS_READONLY : NVS_READWRITE;
   esp_err_t err = nvs_open(namespace_name, mode, &handle);
   if (err != ESP_OK) {
@@ -12,6 +13,11 @@ NVSProxy::NVSProxy(const char* namespace_name, bool readonly)
 }
 
 NVSProxy::~NVSProxy() {
+  if (mutex != nullptr) {
+    vSemaphoreDelete(mutex);
+    mutex = nullptr;
+  }
+  
   if (handle != 0) {
     nvs_close(handle);
   }

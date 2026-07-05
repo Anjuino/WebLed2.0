@@ -2,6 +2,11 @@
 
 led::led() : settings(STORAGE_LED, false)
 {
+  mutex = xSemaphoreCreateMutex();
+  if (mutex == nullptr) {
+    ESP_LOGE(TAG, "Не удалось создать мьютекс!");
+  }
+
   uint8_t init_flag = settings.get<uint8_t>(KEY_INIT, 0);
 
   if (init_flag == 0) {
@@ -26,6 +31,11 @@ led::led() : settings(STORAGE_LED, false)
 
 led::~led()
 {
+  if (mutex != nullptr) {
+    vSemaphoreDelete(mutex);
+    mutex = nullptr;
+  }
+
   if(led_strip != nullptr) {
     led_strip_del(led_strip);
     led_strip = nullptr;
@@ -74,6 +84,11 @@ bool led::init()
 
 bool led::update_led_count(uint16_t new_led_count)
 {
+  if (xSemaphoreTake(mutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
+    ESP_LOGE(TAG, "Не удалось захватить мьютекс");
+    return false;
+  }
+
   ESP_LOGI(TAG, "Обновление количества светодоидов, текущее %u", led_count);
   uint16_t old_mode = mode;
   off();
@@ -94,11 +109,12 @@ bool led::update_led_count(uint16_t new_led_count)
 
   if (init()) {
     mode = old_mode;
-
+    xSemaphoreGive(mutex);
     ESP_LOGI(TAG, "Обновление успешно %u", new_led_count);
     return true;
   }
   ESP_LOGI(TAG, "Перезапуск ленты закончился с ошибкой");
+  xSemaphoreGive(mutex);
   return false;
 }
 
@@ -173,6 +189,11 @@ void led::off(void)
 
 void led::set_state(uint8_t _r, uint8_t _g, uint8_t _b, uint8_t _mode, uint8_t _speed, uint8_t _brightness)
 {
+  if (xSemaphoreTake(mutex, pdMS_TO_TICKS(3000)) != pdTRUE) {
+    ESP_LOGE(TAG, "Не удалось захватить мьютекс");
+    return;
+  }
+
   bool need_commit = false;
 
   if(this->r != _r) {
@@ -277,6 +298,7 @@ void led::set_state(uint8_t _r, uint8_t _g, uint8_t _b, uint8_t _mode, uint8_t _
     settings.commit();
   }
 
+  xSemaphoreGive(mutex);
   show();  // нужно подумать дергать ли его если эффекты уже крутятся, по идее только на статичном надо
 }
 
