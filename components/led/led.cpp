@@ -60,7 +60,7 @@ bool led::init()
   memset(color_buffer, 0, led_count * 3);
 
   led_strip_config_t strip_config = {};
-  strip_config.strip_gpio_num = 21;  //TODO поправить номер пина, добавить в настройку
+  strip_config.strip_gpio_num = 21;                   //TODO поправить номер пина, добавить в настройку 2 для esp32wroom
   strip_config.max_leds = led_count;
   strip_config.led_pixel_format = LED_PIXEL_FORMAT_GRB;
   strip_config.led_model = LED_MODEL_WS2812;
@@ -69,8 +69,8 @@ bool led::init()
   led_strip_rmt_config_t rmt_config = {};
   rmt_config.clk_src = RMT_CLK_SRC_DEFAULT;
   rmt_config.resolution_hz = 10 * 1000 * 1000;
-  rmt_config.flags.with_dma = true;
-  rmt_config.mem_block_symbols = 1024;
+  rmt_config.flags.with_dma = true;               // false для esp32 wroom
+  rmt_config.mem_block_symbols = 1024;            // 128 для esp32 wroom
 
   ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip));
 
@@ -183,6 +183,7 @@ void led::fill_color(uint8_t r, uint8_t g, uint8_t b)
 
 void led::off(void)
 {
+  mode = 255;
   led_strip_clear(led_strip);
   memset(color_buffer, 0, led_count * 3);
 }
@@ -299,7 +300,7 @@ void led::set_state(uint8_t _r, uint8_t _g, uint8_t _b, uint8_t _mode, uint8_t _
   }
 
   xSemaphoreGive(mutex);
-  show();  // нужно подумать дергать ли его если эффекты уже крутятся, по идее только на статичном надо
+  if(mode == 1) show();  // нужно подумать дергать ли его если эффекты уже крутятся, по идее только на статичном надо
 }
 
 void led::rainbow()

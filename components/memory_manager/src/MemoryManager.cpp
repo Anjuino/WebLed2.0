@@ -14,6 +14,6 @@ void memory_task(void *pvParameters)
         ESP_LOGI(TAG, "Min free: %zu bytes", internal_min_free);
         ESP_LOGI(TAG, "Total: %zu bytes",    internal_total);
         
-        vTaskDelay(pdMS_TO_TICKS(120000));
+        vTaskDelay(pdMS_TO_TICKS(30000));
     }
 }

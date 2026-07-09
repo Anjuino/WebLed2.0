@@ -49,6 +49,12 @@ class led {
     bool init();
     void set_pixel(uint16_t pixel_count, uint8_t r, uint8_t g, uint8_t b);
 
+    void set_save_mode(bool new_save_mode) { settings.set(KEY_LED_SAVE_MODE, (uint8_t)new_save_mode, true); };
+    void set_mode(uint8_t new_mode) { set_state(this->r, this->g, this->b, new_mode, this->speed, this->brightness); };
+    void set_color(uint8_t new_r, uint8_t new_g, uint8_t new_b) { set_state(new_r, new_g, new_b, this->mode, this->speed, this->brightness); };
+    void set_brightness(uint8_t new_brightness) { set_state(this->r, this->g, this->b, this->mode, this->speed, new_brightness); };
+    void set_speed(uint8_t new_speed) { set_state(this->r, this->g, this->b, this->mode, new_speed, this->brightness); };
+
     void set_state(uint8_t r, uint8_t g, uint8_t b, uint8_t mode, uint8_t speed, uint8_t brightness);
 
     uint8_t get_speed(void) { return speed; };

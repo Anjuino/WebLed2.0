@@ -80,3 +80,6 @@ Desktop.ini
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/settings.json
+
+*.crt
+*.key

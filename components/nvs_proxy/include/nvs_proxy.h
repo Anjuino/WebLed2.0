@@ -103,6 +103,10 @@ class NVSProxy {
       return default_value;
     }
 
+    std::string get(const char* key, const char* default_value) {
+      return get(key, std::string(default_value));
+    }
+
     std::string get(const char* key, std::string default_value = "") {
       if (mutex == nullptr || xSemaphoreTake(mutex, pdMS_TO_TICKS(3000)) != pdTRUE) {
         ESP_LOGE(TAG, "Failed to take mutex in get()");
