@@ -88,7 +88,7 @@ void wifimanager::wifi_event_handler(void* arg, esp_event_base_t event_base, int
     switch (event_id) {
       case WIFI_EVENT_STA_START:
         ESP_LOGI(instance->TAG, "WiFi STA started");
-        esp_wifi_connect();
+        if(!instance->is_scan) esp_wifi_connect();
         break;
 
       case WIFI_EVENT_STA_CONNECTED:
@@ -98,10 +98,10 @@ void wifimanager::wifi_event_handler(void* arg, esp_event_base_t event_base, int
         break;
 
       case WIFI_EVENT_STA_DISCONNECTED:
-        ESP_LOGI(instance->TAG, "WiFi STA disconnected, trying to reconnect...");
+        ESP_LOGI(instance->TAG, "WiFi STA disconnected");
         xEventGroupClearBits(instance->wifi_event_group, WIFI_CONNECTED_BIT);
-        esp_wifi_connect();
-        instance->is_ready = true; 
+        if(!instance->is_scan) esp_wifi_connect();
+        instance->is_ready = false; 
         break;
 
       case WIFI_EVENT_AP_START:
@@ -113,7 +113,7 @@ void wifimanager::wifi_event_handler(void* arg, esp_event_base_t event_base, int
       case WIFI_EVENT_AP_STOP:
         ESP_LOGI(instance->TAG, "WiFi AP stopped");
         xEventGroupClearBits(instance->wifi_event_group, WIFI_AP_STARTED_BIT);
-        instance->is_ready = true; 
+        instance->is_ready = false; 
         break;
 
       default:
@@ -143,13 +143,12 @@ std::vector<wifi_ap_record_t> wifimanager::scan_wifi_networks() {
   }
 
   bool need_switch_back = false;
-
+  is_scan = true;
   if (current_mode == WIFI_MODE_AP) {
     ESP_LOGI(TAG, "Switching to APSTA mode for scanning...");
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
     need_switch_back = true;
-
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(1000));
   } else if (current_mode == WIFI_MODE_STA) {
     // В STA режиме все ок, сканируем как есть
     ESP_LOGI(TAG, "Scanning in STA mode...");
@@ -163,8 +162,8 @@ std::vector<wifi_ap_record_t> wifimanager::scan_wifi_networks() {
   scan_config.ssid = 0;
   scan_config.show_hidden = false;
   scan_config.scan_type =  WIFI_SCAN_TYPE_ACTIVE;
-  scan_config.scan_time.active.min = 100;
-  scan_config.scan_time.active.max = 300;
+  scan_config.scan_time.active.min = 50;
+  scan_config.scan_time.active.max = 100;
 
   ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, true));
 
@@ -177,11 +176,7 @@ std::vector<wifi_ap_record_t> wifimanager::scan_wifi_networks() {
     ESP_LOGI(TAG, "Found %d APs", ap_count);
 
     for (int i = 0; i < ap_count; i++) {
-        ESP_LOGI(TAG, "SSID: %s, RSSI: %d, Channel: %d, Auth: %d",
-                  ap_records[i].ssid,
-                  ap_records[i].rssi,
-                  ap_records[i].primary,
-                  ap_records[i].authmode);
+      ESP_LOGI(TAG, "SSID: %s, RSSI: %d", ap_records[i].ssid, ap_records[i].rssi);
     }
   } else {
     ESP_LOGI(TAG, "No APs found");
@@ -190,9 +185,9 @@ std::vector<wifi_ap_record_t> wifimanager::scan_wifi_networks() {
   if (need_switch_back) {
     ESP_LOGI(TAG, "Switching back to AP mode...");
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
-    vTaskDelay(pdMS_TO_TICKS(100));
   }
-  
+
+  is_scan = false;
   return ap_records;
 }
 
@@ -314,9 +309,11 @@ bool wifimanager::set_sta(const std::string& ssid, const std::string& password, 
   if (mutex && xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
     ssid_name = ssid;
     ssid_pswd = password;
-
+    mode = WIFI_MODE_STA;
+    
     settings.set(KEY_SSID, ssid);
-    settings.set(KEY_SSID_PASSWORD, password, need_save);
+    settings.set(KEY_SSID_PASSWORD, password);
+    settings.set(KEY_WIFI_MODE, (uint8_t)WIFI_MODE_STA, need_save);
 
     xSemaphoreGive(mutex);
     ESP_LOGI(TAG, "Установка параметров подключения %s", ssid.c_str());
@@ -339,9 +336,11 @@ bool wifimanager::set_ap(const std::string& ap, const std::string& password, boo
   if (mutex && xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
     ap_name = ap;
     ap_pswd = password;
+    mode = WIFI_MODE_AP;
 
     settings.set(KEY_AP, ap);
-    settings.set(KEY_AP_PASSWORD, password, need_save);
+    settings.set(KEY_AP_PASSWORD, password);
+    settings.set(KEY_WIFI_MODE, (uint8_t)WIFI_MODE_AP, need_save);
 
     xSemaphoreGive(mutex);
     ESP_LOGI(TAG, "Установка имени точки доступа %s", ap_name.c_str());

@@ -33,6 +33,7 @@ rm client.csr client.cnf
 
 echo ""
 
+сервер должен быть запущен с с ключом и сертификатом
 
 Проверить соединение
 python mtls_client.py

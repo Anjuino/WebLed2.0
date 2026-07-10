@@ -12,6 +12,7 @@
 
 class led *wLed = nullptr;
 class wifimanager *wifi = nullptr;
+
 const char *TAG = "main";
 
 void initFS()
@@ -66,32 +67,36 @@ void start_mdns(void)
 {
   esp_err_t ret = mdns_init();
   if (ret != ESP_OK) {
-    ESP_LOGE("MAIN", "Ошибка инициализации mDNS: %d", ret);
+    ESP_LOGE(TAG, "Ошибка инициализации mDNS: %d", ret);
     return;
   }
 
   ret = mdns_hostname_set(wifi->get_mdns_name().c_str());
   if (ret != ESP_OK) {
-    ESP_LOGE("MAIN", "Ошибка установки hostname: %d", ret);
+    ESP_LOGE(TAG, "Ошибка установки hostname: %d", ret);
+    return;
   }
+
+  ESP_LOGI(TAG, "hostname: %s", wifi->get_mdns_name().c_str());
 }
-#include <sys/time.h>
+
 extern "C" void app_main ()
 {
   NVSProxy::nvs_init();
   vTaskDelay(pdMS_TO_TICKS(100));
   wifi = new wifimanager();
   //wifi->set_ap("WledTest", "87654321", true);
-  //wifi->set_sta("TP-Link_467D", "66484608", true);
-  //wifi->set_mode(WIFI_MODE_STA, true);
+  //wifi->set_sta("tTP-Link_467D", "66484608", true);
   wifi->init();
 
   while(!wifi->ready()) {
     vTaskDelay(pdMS_TO_TICKS(1000));
     ESP_LOGI(TAG, "wifi init...");
   }
+
   start_mdns();
   vTaskDelay(pdMS_TO_TICKS(100));
+
   wLed = new led();
 
   esp_err_t ret = https_server_start(443);
@@ -100,11 +105,10 @@ extern "C" void app_main ()
     ESP_LOGE(TAG, "Failed to start HTTPS server");
     return;
   }
-  // тут запуск сервера с передачей в него ленты
-  vTaskDelay(pdMS_TO_TICKS(1000));
+  vTaskDelay(pdMS_TO_TICKS(100));
 
   xTaskCreate(led::task_entry, "Led", 4 * 1024, wLed, 12, NULL);
-  vTaskDelay(pdMS_TO_TICKS(500));
+  vTaskDelay(pdMS_TO_TICKS(100));
   xTaskCreate(memory_task, "WatchMemory", 4 * 1024, NULL, 2, NULL);
   vTaskDelete(NULL);
   

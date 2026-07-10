@@ -17,3 +17,12 @@ void memory_task(void *pvParameters)
         vTaskDelay(pdMS_TO_TICKS(30000));
     }
 }
+
+memory_info getstatus(void) {
+    memory_info mem;
+    mem.free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    mem.total = heap_caps_get_total_size(MALLOC_CAP_INTERNAL);
+    mem.min_free = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
+
+    return mem;
+}

@@ -5,6 +5,13 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h" 
 
-void memory_task(void *pvParameters);
+struct memory_info {
+    size_t total;
+    size_t free;
+    size_t min_free;
+};
 
+
+void memory_task(void *pvParameters);
+memory_info getstatus();
 #endif // MEMORYMANAGER_H

@@ -60,6 +60,7 @@ class led {
     uint8_t get_speed(void) { return speed; };
     uint8_t get_brightness(void) { return brightness; };
     uint8_t get_mode(void) {return mode; };
+    uint16_t get_count_led(void) { return led_count; };
 
     bool update_led_count(uint16_t new_count);
     void show(void);

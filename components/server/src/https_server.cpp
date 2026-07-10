@@ -11,16 +11,24 @@
 #include "private.h"
 #include "mbedtls/x509_crt.h"
 #include "mbedtls/error.h"
+#include "MemoryManager.h"
+#include "cJSON.h"
+#include "driver/temperature_sensor.h"
+#include "wifimanager.h"
+#include <vector>
 
 static const char *TAG = "HTTPS_SERVER";
 
+temperature_sensor_handle_t temp_handle = NULL;
+
 static httpd_handle_t server = NULL;
+extern wifimanager *wifi;
 
 size_t cert_len = cert_cert_crt_end - cert_cert_crt_start;
 size_t key_len = cert_private_key_end - cert_private_key_start;
 size_t ca_len = cert_ca_crt_end - cert_ca_crt_start;
 
-void check_my_certificate(void) {
+static void check_certificate(void) {
   int ret;
   mbedtls_x509_crt cert_ctx;
   mbedtls_x509_crt_init(&cert_ctx);
@@ -45,28 +53,66 @@ void check_my_certificate(void) {
   mbedtls_x509_crt_free(&cert_ctx);
 }
 
-
-typedef struct {
-  const char *uri;
-  int method;
-  esp_err_t (*handler)(httpd_req_t *req);
-} uri_handler_t;
-
-#define MAX_HANDLERS 20
-static uri_handler_t handlers[MAX_HANDLERS] = {};
-static int handler_count = 0;
-
-
 static esp_err_t api_data_handler(httpd_req_t *req) {
-  const char* response = "{\"status\":\"ok\"}";
+  memory_info memory = getstatus();
+  float temp_cpu;
+  ESP_ERROR_CHECK(temperature_sensor_get_celsius(temp_handle, &temp_cpu));
+
+  cJSON *root = cJSON_CreateObject();
+  cJSON_AddNumberToObject(root, "cpu_temp", temp_cpu);
+
+  cJSON *_memory = cJSON_CreateObject();
+  cJSON_AddNumberToObject(_memory, "iram_total", memory.total);
+  cJSON_AddNumberToObject(_memory, "iram_free", memory.free);
+  cJSON_AddNumberToObject(_memory, "iram_min_free", memory.min_free);
+  cJSON_AddItemToObject(root, "memory_info", _memory);
+
+  cJSON *wifi_array = cJSON_CreateArray();
+    
+  std::vector<wifi_ap_record_t> wifi_networks = wifi->scan_wifi_networks();
+
+  for (size_t i = 0; i < wifi_networks.size(); i++) {
+    wifi_ap_record_t ap = wifi_networks[i];
+
+    cJSON *ap_obj = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(ap_obj, "ssid", (const char*)ap.ssid);
+    cJSON_AddNumberToObject(ap_obj, "rssi", ap.rssi);
+
+    char mac_str[18];
+    snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x",
+              ap.bssid[0], ap.bssid[1], ap.bssid[2],
+              ap.bssid[3], ap.bssid[4], ap.bssid[5]);
+    cJSON_AddStringToObject(ap_obj, "bssid", mac_str);
+
+    cJSON_AddItemToArray(wifi_array, ap_obj);
+  }
+
+  cJSON_AddItemToObject(root, "wifi_networks", wifi_array);
+
+  char *json = cJSON_Print(root);
+
   httpd_resp_set_type(req, "application/json");
-  httpd_resp_send(req, response, strlen(response));
-  ESP_LOGI(TAG, "Ответ");
+  httpd_resp_sendstr(req, json);
+
+  free(json);
+  cJSON_Delete(root);
+
+  ESP_LOGI(TAG, "Ответ отправлен, найдено %d Wi-Fi сетей", wifi_networks.size());
   return ESP_OK;
 }
 
 
 esp_err_t https_server_start(uint16_t port) {
+
+  temperature_sensor_config_t temp_sensor_config = {
+    .range_min = 20,
+    .range_max = 80,
+    .clk_src = TEMPERATURE_SENSOR_CLK_SRC_DEFAULT,
+  };
+
+  ESP_ERROR_CHECK(temperature_sensor_install(&temp_sensor_config, &temp_handle));
+  ESP_ERROR_CHECK(temperature_sensor_enable(temp_handle));
   if (server != NULL) {
     ESP_LOGW(TAG, "Server already running");
     return ESP_OK;
@@ -74,7 +120,7 @@ esp_err_t https_server_start(uint16_t port) {
   
   ESP_LOGI(TAG, "Starting HTTPS server on port %d", port);
 
-  check_my_certificate();
+  check_certificate();
 
   httpd_ssl_config_t ssl_config = HTTPD_SSL_CONFIG_DEFAULT();
   ssl_config.port_secure = port;
@@ -87,6 +133,9 @@ esp_err_t https_server_start(uint16_t port) {
 
   ssl_config.cacert_pem = (const uint8_t *)cert_ca_crt_start;
   ssl_config.cacert_len = ca_len;
+
+  ssl_config.httpd.recv_wait_timeout = 35;
+  ssl_config.httpd.send_wait_timeout = 35;
 
   ssl_config.transport_mode = HTTPD_SSL_TRANSPORT_SECURE;
   ssl_config.tls_handshake_timeout_ms = 5000;
@@ -109,7 +158,7 @@ esp_err_t https_server_start(uint16_t port) {
   };
   httpd_register_uri_handler(server, &uri_handler);
   
-  ESP_LOGI(TAG, "✅ HTTPS server started successfully on port %d", port);
+  ESP_LOGI(TAG, "HTTPS server started successfully on port %d", port);
   return ESP_OK;
 }
 
@@ -120,9 +169,4 @@ void https_server_stop(void) {
     server = NULL;
     ESP_LOGI(TAG, "HTTPS server stopped");
   }
-  
-  for (int i = 0; i < handler_count; i++) {
-    free((void*)handlers[i].uri);
-  }
-  handler_count = 0;
 }

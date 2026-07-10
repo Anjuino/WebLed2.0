@@ -3,14 +3,14 @@ import ssl
 import os
 import sys
 
-# ===== НАСТРОЙКИ (меняй тут) =====
-IP = "192.168.0.101"           # IP ESP32
+#IP = "espledae7ca8.local"           # IP ESP32
+IP = "192.168.4.1"           # IP ESP32
 PORT = 443                      # Порт
-PATH = "/api/data"              # Путь
+PATH = "/api/data"
 CACERT = "ca.crt"               # Корневой сертификат CA
 CERT = "client.crt"             # Клиентский сертификат
 KEY = "client.key"              # Ключ клиента
-# ==================================
+
 
 def main():
     url = f"https://{IP}:{PORT}{PATH}"
@@ -34,7 +34,7 @@ def main():
         print(f"\nПодключение к {url}")
         req = urllib.request.Request(url)
 
-        with urllib.request.urlopen(req, timeout=5, context=context) as response:
+        with urllib.request.urlopen(req, timeout=20, context=context) as response:
             print(f"\nСтатус: {response.status}")
             print(f"Ответ: {response.read().decode()}")
 
