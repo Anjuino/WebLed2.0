@@ -9,6 +9,7 @@
 #include "esp_event.h"
 #include "nvs_proxy.h"
 #include "esp_mac.h"
+#include "cJSON.h"
 #include "vector"
 
 #define STORAGE_WIFI "wifi"
@@ -49,6 +50,7 @@ class wifimanager {
 
     bool is_ready = false;
     bool is_scan = false;
+    bool is_wifi_initialized = false;
 
     static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data);
     static void ip_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data);
@@ -69,12 +71,16 @@ class wifimanager {
     bool set_ap(const std::string& ap, const std::string& password, bool need_save);
 
     wifi_mode_t get_mode() { return mode; };
+    void get_wifi_state_json(char* json_out, size_t max_len);
     bool set_mode(wifi_mode_t _mode, bool need_save);
 
     std::string get_mdns_name() { return mdns; };
     bool set_mdns(const std::string& _mdns, bool need_save);
 
     bool ready() { return is_ready; };
+
+    void parse_command(char* json, size_t len);
+    void get_state_json(char* json_out, size_t max_len);
 };
 
 #endif // WIFIMANAGER_H

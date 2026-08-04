@@ -3,7 +3,7 @@
 #include "freertos/FreeRTOS.h" 
 
 #include "esp_littlefs.h"
-#include "MemoryManager.h"
+#include "DeviceManager.h"
 #include "led.h"
 #include "nvs_proxy.h"
 #include "mdns.h"
@@ -89,9 +89,15 @@ extern "C" void app_main ()
   //wifi->set_sta("tTP-Link_467D", "66484608", true);
   wifi->init();
 
+  uint64_t timer = (esp_timer_get_time() / 1000) + 5000;
   while(!wifi->ready()) {
     vTaskDelay(pdMS_TO_TICKS(1000));
     ESP_LOGI(TAG, "wifi init...");
+    if(timer < (esp_timer_get_time() / 1000)) {
+      wifi->set_ap("Equalizer", "12345678", false);
+      wifi->init();
+      break;
+    }
   }
 
   start_mdns();
@@ -107,9 +113,9 @@ extern "C" void app_main ()
   }
   vTaskDelay(pdMS_TO_TICKS(100));
 
-  xTaskCreate(led::task_entry, "Led", 4 * 1024, wLed, 12, NULL);
+  xTaskCreatePinnedToCore(led::task_entry, "Led", 4 * 1024, wLed, 14, NULL, 1);
   vTaskDelay(pdMS_TO_TICKS(100));
-  xTaskCreate(memory_task, "WatchMemory", 4 * 1024, NULL, 2, NULL);
+  xTaskCreate(memory_task, "WatchDevice", 4 * 1024, NULL, 2, NULL);
   vTaskDelete(NULL);
   
 }

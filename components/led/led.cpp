@@ -21,11 +21,14 @@ led::led() : settings(STORAGE_LED, false)
     ESP_LOGI(TAG, "Первый запуск, сохраняем дефолтные состояния");
   } else {
     led_count = settings.get<uint16_t>(KEY_LED_COUNT, 1);
+    led_count = 256;
     speed = settings.get<uint8_t>(KEY_LED_SPEED, 10);
+    speed = 70;
     brightness = settings.get<uint8_t>(KEY_LED_BRIGHTNESS, 50);
+    brightness = 5;
     mode = settings.get<uint8_t>(KEY_LED_MODE, 1);
     save_mode = settings.get<uint8_t>(KEY_LED_SAVE_MODE, 0);
-    ESP_LOGI(TAG, "Загружено из памяти: LEDs=%u, Скорость=%u, Яркость=%u, Режим=%u, Режим сохранения %d", led_count, speed, brightness, mode, save_mode);
+    ESP_LOGI(TAG, "Загружено из памяти: LEDs=%u, Скорость=%u, Яркость=%u, Режим=%u, Режим сохранения %s", led_count, speed, brightness, mode, save_mode ? "ON" : "OFF");
   }
 }
 
@@ -41,26 +44,13 @@ led::~led()
     led_strip = nullptr;
   }
 
-  if(color_buffer != nullptr) {
-    free(color_buffer);
-    color_buffer = nullptr;
-  }
 }
 
 bool led::init()
 {
-  // Инициализируем буфер
-  // Выделяем память под буфер: 3 байта (RGB) на каждый светодиод
-  color_buffer = (uint8_t*)malloc(led_count * 3);
-  if (!color_buffer) {
-    ESP_LOGE(TAG, "Ошибка выделения буфера для %d LEDs", led_count);
-    return false;
-  }
-  // Обнуляем буфер
-  memset(color_buffer, 0, led_count * 3);
 
   led_strip_config_t strip_config = {};
-  strip_config.strip_gpio_num = 21;                   //TODO поправить номер пина, добавить в настройку 2 для esp32wroom
+  strip_config.strip_gpio_num = 4;                   //TODO поправить номер пина, добавить в настройку 2 для esp32wroom
   strip_config.max_leds = led_count;
   strip_config.led_pixel_format = LED_PIXEL_FORMAT_GRB;
   strip_config.led_model = LED_MODEL_WS2812;
@@ -76,9 +66,6 @@ bool led::init()
 
   ESP_LOGI(TAG, "Запуск ленты: %d LEDs", led_count);
 
-  if(save_mode) {
-    ESP_LOGI(TAG, "Включен режим сохранения состояния");
-  }
   return true;
 }
 
@@ -96,8 +83,6 @@ bool led::update_led_count(uint16_t new_led_count)
 
   led_strip_del(led_strip);
   led_strip = nullptr;
-  free(color_buffer);
-  color_buffer = nullptr;
   vTaskDelay(pdMS_TO_TICKS(500));
 
   if (!settings.set(KEY_LED_COUNT, new_led_count, true)) {
@@ -125,15 +110,12 @@ void led::set_pixel(uint16_t pixel_count, uint8_t r, uint8_t g, uint8_t b)
     return;
   }
 
-  if(color_buffer == nullptr) {
-    ESP_LOGI(TAG, "Нет буфера под цвета");
-    return;
-  }
-
-  uint16_t idx = pixel_count * 3;
-  color_buffer[idx] = r;
-  color_buffer[idx + 1] = g;
-  color_buffer[idx + 2] = b;
+  uint8_t factor = (brightness * 255) / 100;
+  led_strip_set_pixel(led_strip, pixel_count,
+      (r * factor) >> 8,
+      (g * factor) >> 8,
+      (b * factor) >> 8
+  );
 }
 
 void led::task()
@@ -160,15 +142,6 @@ void led::task()
 
 void led::show(void) 
 {
-  for (uint16_t i = 0; i < led_count; i++) {
-    uint16_t idx = i * 3;
-
-    uint8_t r = (color_buffer[idx]     * brightness) / 255;
-    uint8_t g = (color_buffer[idx + 1] * brightness) / 255;
-    uint8_t b = (color_buffer[idx + 2] * brightness) / 255;
-
-    led_strip_set_pixel(led_strip, i, r, g, b);
-  }
   led_strip_refresh(led_strip);
 }
 
@@ -185,7 +158,6 @@ void led::off(void)
 {
   mode = 255;
   led_strip_clear(led_strip);
-  memset(color_buffer, 0, led_count * 3);
 }
 
 void led::set_state(uint8_t _r, uint8_t _g, uint8_t _b, uint8_t _mode, uint8_t _speed, uint8_t _brightness)
@@ -209,11 +181,11 @@ void led::set_state(uint8_t _r, uint8_t _g, uint8_t _b, uint8_t _mode, uint8_t _
       }
     }
   } else {
-    ESP_LOGI(TAG, "Красный канал тот же:%d", this->r);
+    ESP_LOGW(TAG, "Красный канал тот же:%d", this->r);
   }
 
   if(this->g != _g) {
-    ESP_LOGI(TAG, "Красный канал:%d", _g);
+    ESP_LOGI(TAG, "Зеленый канал:%d", _g);
     this->g = _g;
     if(save_mode) {
       if(settings.set(KEY_LED_COLOR_G, _g)) {
@@ -224,7 +196,7 @@ void led::set_state(uint8_t _r, uint8_t _g, uint8_t _b, uint8_t _mode, uint8_t _
       }
     }
   } else {
-    ESP_LOGI(TAG, "Зеленый канал тот же:%d", this->g);
+    ESP_LOGW(TAG, "Зеленый канал тот же:%d", this->g);
   }
 
   if(this->b != _b) {
@@ -239,7 +211,7 @@ void led::set_state(uint8_t _r, uint8_t _g, uint8_t _b, uint8_t _mode, uint8_t _
       }
     }
   } else {
-    ESP_LOGI(TAG, "Синий канал тот же:%d", this->b);
+    ESP_LOGW(TAG, "Синий канал тот же:%d", this->b);
   }
 
   if(this->mode != _mode) {
@@ -254,7 +226,7 @@ void led::set_state(uint8_t _r, uint8_t _g, uint8_t _b, uint8_t _mode, uint8_t _
       }
     }
   } else {
-    ESP_LOGI(TAG, "Режим тот же %d", this->mode);
+    ESP_LOGW(TAG, "Режим тот же %d", this->mode);
   }
 
   if(_speed <= 100) {
@@ -270,7 +242,7 @@ void led::set_state(uint8_t _r, uint8_t _g, uint8_t _b, uint8_t _mode, uint8_t _
         }
       }
     } else {
-      ESP_LOGE(TAG, "Скорость та же %d", this->speed);
+      ESP_LOGW(TAG, "Скорость та же %d", this->speed);
     }
   } else {
     ESP_LOGE(TAG, "Скорость может быть от 0 до 100, передано как %d", _speed);
@@ -280,6 +252,7 @@ void led::set_state(uint8_t _r, uint8_t _g, uint8_t _b, uint8_t _mode, uint8_t _
     if(this->brightness != _brightness) {
       ESP_LOGI(TAG, "Установка яркости %d", _brightness);
       this->brightness = _brightness;
+
       if(save_mode) {
         if(settings.set(KEY_LED_BRIGHTNESS, _brightness)) {
           need_commit = true;
@@ -289,18 +262,28 @@ void led::set_state(uint8_t _r, uint8_t _g, uint8_t _b, uint8_t _mode, uint8_t _
         }
       }
     } else {
-      ESP_LOGE(TAG, "Яркость та же %d",this->brightness);
+      ESP_LOGW(TAG, "Яркость та же %d",this->brightness);
     }
   } else {
     ESP_LOGE(TAG, "Яркость может быть от 0 до 100, передано как %d", _brightness);
   }
 
   if(need_commit) {
+    ESP_LOGI(TAG, "Сохранение нового состояния");
     settings.commit();
   }
 
   xSemaphoreGive(mutex);
-  if(mode == 1) show();  // нужно подумать дергать ли его если эффекты уже крутятся, по идее только на статичном надо
+  if(mode == 254) fill_color(r, g, b);
+}
+
+void led::set_save_mode(bool new_save_mode)
+{
+  if(this->save_mode != new_save_mode) {
+    ESP_LOGI(TAG, "Режим сохранения: %s", save_mode ? "ON" : "OFF");
+    save_mode = new_save_mode;
+    settings.set(KEY_LED_SAVE_MODE, (uint8_t)new_save_mode, true);
+  }
 }
 
 void led::rainbow()

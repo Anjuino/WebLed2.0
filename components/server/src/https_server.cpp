@@ -11,15 +11,13 @@
 #include "private.h"
 #include "mbedtls/x509_crt.h"
 #include "mbedtls/error.h"
-#include "MemoryManager.h"
+#include "DeviceManager.h"
 #include "cJSON.h"
-#include "driver/temperature_sensor.h"
 #include "wifimanager.h"
 #include <vector>
+#include <math.h>
 
 static const char *TAG = "HTTPS_SERVER";
-
-temperature_sensor_handle_t temp_handle = NULL;
 
 static httpd_handle_t server = NULL;
 extern wifimanager *wifi;
@@ -55,11 +53,11 @@ static void check_certificate(void) {
 
 static esp_err_t api_data_handler(httpd_req_t *req) {
   memory_info memory = getstatus();
-  float temp_cpu;
-  ESP_ERROR_CHECK(temperature_sensor_get_celsius(temp_handle, &temp_cpu));
 
   cJSON *root = cJSON_CreateObject();
-  cJSON_AddNumberToObject(root, "cpu_temp", temp_cpu);
+
+  double temperature = round(memory.temperature * 100.0) / 100.0;
+  cJSON_AddNumberToObject(root, "cpu_temp", temperature);
 
   cJSON *_memory = cJSON_CreateObject();
   cJSON_AddNumberToObject(_memory, "iram_total", memory.total);
@@ -105,14 +103,6 @@ static esp_err_t api_data_handler(httpd_req_t *req) {
 
 esp_err_t https_server_start(uint16_t port) {
 
-  temperature_sensor_config_t temp_sensor_config = {
-    .range_min = 20,
-    .range_max = 80,
-    .clk_src = TEMPERATURE_SENSOR_CLK_SRC_DEFAULT,
-  };
-
-  ESP_ERROR_CHECK(temperature_sensor_install(&temp_sensor_config, &temp_handle));
-  ESP_ERROR_CHECK(temperature_sensor_enable(temp_handle));
   if (server != NULL) {
     ESP_LOGW(TAG, "Server already running");
     return ESP_OK;
@@ -157,12 +147,10 @@ esp_err_t https_server_start(uint16_t port) {
     .user_ctx = NULL
   };
   httpd_register_uri_handler(server, &uri_handler);
-  
-  ESP_LOGI(TAG, "HTTPS server started successfully on port %d", port);
+
   return ESP_OK;
 }
 
-// Остановка сервера
 void https_server_stop(void) {
   if (server != NULL) {
     httpd_ssl_stop(server);

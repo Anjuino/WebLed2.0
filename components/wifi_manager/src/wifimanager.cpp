@@ -1,5 +1,5 @@
 #include "wifimanager.h"
-
+#include "esp_system.h"
 
 static std::string getHostname() {
   uint8_t mac[6];
@@ -163,7 +163,7 @@ std::vector<wifi_ap_record_t> wifimanager::scan_wifi_networks() {
   scan_config.show_hidden = false;
   scan_config.scan_type =  WIFI_SCAN_TYPE_ACTIVE;
   scan_config.scan_time.active.min = 50;
-  scan_config.scan_time.active.max = 100;
+  scan_config.scan_time.active.max = 150;
 
   ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, true));
 
@@ -192,17 +192,56 @@ std::vector<wifi_ap_record_t> wifimanager::scan_wifi_networks() {
 }
 
 bool wifimanager::wifi_init_ap(void) {
-  ESP_ERROR_CHECK(esp_netif_init());
-  ESP_ERROR_CHECK(esp_event_loop_create_default());
+  ESP_LOGI(TAG, "wifi_init_ap: Starting AP initialization");
 
-  esp_netif_t* sta_netif = esp_netif_create_default_wifi_sta();
-  assert(sta_netif);
-
-  esp_netif_t* ap_netif = esp_netif_create_default_wifi_ap();
-  assert(ap_netif);
+  wifi_mode_t current_mode;
+  esp_err_t err = esp_wifi_get_mode(&current_mode);
+  ESP_LOGI(TAG, "wifi_init_ap: Current WiFi mode: %d, err: %d", current_mode, err);
   
-  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-  ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+  if (err == ESP_OK && current_mode != WIFI_MODE_NULL) {
+    ESP_LOGI(TAG, "wifi_init_ap: WiFi already initialized, stopping first...");
+    ESP_ERROR_CHECK(esp_wifi_stop());
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+  
+  ESP_ERROR_CHECK(esp_netif_init());
+
+  err = esp_event_loop_create_default();
+  if (err == ESP_ERR_INVALID_STATE) {
+    ESP_LOGI(TAG, "wifi_init_ap: Event loop already exists, continuing...");
+  } else if (err != ESP_OK) {
+    ESP_LOGE(TAG, "wifi_init_ap: Event loop creation failed: %s", esp_err_to_name(err));
+    return false;
+  }
+
+  if (sta_netif == nullptr) {
+    ESP_LOGI(TAG, "wifi_init_ap: Creating STA netif...");
+    sta_netif = esp_netif_create_default_wifi_sta();
+    if (sta_netif == NULL) {
+      ESP_LOGW(TAG, "wifi_init_ap: STA netif already exists or failed to create");
+    }
+  } else {
+    ESP_LOGI(TAG, "wifi_init_ap: STA netif already exists");
+  }
+  
+  if (ap_netif == nullptr) {
+    ESP_LOGI(TAG, "wifi_init_ap: Creating AP netif...");
+    ap_netif = esp_netif_create_default_wifi_ap();
+    if (ap_netif == NULL) {
+      ESP_LOGW(TAG, "wifi_init_ap: AP netif already exists or failed to create");
+    }
+  } else {
+    ESP_LOGI(TAG, "wifi_init_ap: AP netif already exists");
+  }
+
+  if (!is_wifi_initialized) {
+    ESP_LOGI(TAG, "wifi_init_ap: Initializing WiFi driver...");
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    is_wifi_initialized = true;
+  } else {
+    ESP_LOGI(TAG, "wifi_init_ap: WiFi driver already initialized");
+  }
   
   ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifimanager::wifi_event_handler, this));
   ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifimanager::ip_event_handler, this));
@@ -222,12 +261,11 @@ bool wifimanager::wifi_init_ap(void) {
     wifi_config.ap.password[0] = '\0';  // Пустой пароль
     wifi_config.ap.authmode = WIFI_AUTH_OPEN;
   }
-  
-  // Остальные настройки
+
   wifi_config.ap.ssid_len = 0;
   wifi_config.ap.channel = 1;
   wifi_config.ap.ssid_hidden = 0;
-  wifi_config.ap.max_connection = 4;
+  wifi_config.ap.max_connection = 1;
   wifi_config.ap.beacon_interval = 100;
 
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
@@ -238,16 +276,47 @@ bool wifimanager::wifi_init_ap(void) {
 }
 
 bool wifimanager::wifi_init_sta(void) {
-  ESP_LOGI(TAG, "Initializing WiFi STA mode");
+  ESP_LOGI(TAG, "wifi_init_sta: Starting STA initialization");
 
+  wifi_mode_t current_mode;
+  esp_err_t err = esp_wifi_get_mode(&current_mode);
+  ESP_LOGI(TAG, "wifi_init_sta: Current WiFi mode: %d, err: %d", current_mode, err);
+  
+  if (err == ESP_OK && current_mode != WIFI_MODE_NULL) {
+    ESP_LOGI(TAG, "wifi_init_sta: WiFi already initialized, stopping first...");
+    ESP_ERROR_CHECK(esp_wifi_stop());
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+  
   ESP_ERROR_CHECK(esp_netif_init());
-  ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-  esp_netif_t* sta_netif = esp_netif_create_default_wifi_sta();
-  assert(sta_netif);
+  err = esp_event_loop_create_default();
+  if (err == ESP_ERR_INVALID_STATE) {
+    ESP_LOGI(TAG, "wifi_init_sta: Event loop already exists, continuing...");
+  } else if (err != ESP_OK) {
+    ESP_LOGE(TAG, "wifi_init_sta: Event loop creation failed: %s", esp_err_to_name(err));
+    return false;
+  }
 
-  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-  ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+  if (sta_netif == nullptr) {
+    ESP_LOGI(TAG, "wifi_init_sta: Creating STA netif...");
+    sta_netif = esp_netif_create_default_wifi_sta();
+    if (sta_netif == NULL) {
+      ESP_LOGW(TAG, "wifi_init_sta: STA netif already exists or failed to create");
+    }
+  } else {
+    ESP_LOGI(TAG, "wifi_init_sta: STA netif already exists");
+  }
+  
+  // Инициализируем WiFi только один раз
+  if (!is_wifi_initialized) {
+    ESP_LOGI(TAG, "wifi_init_sta: Initializing WiFi driver...");
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    is_wifi_initialized = true;
+  } else {
+    ESP_LOGI(TAG, "wifi_init_sta: WiFi driver already initialized");
+  }
 
   ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifimanager::wifi_event_handler, this));
   ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifimanager::ip_event_handler, this));
@@ -260,8 +329,7 @@ bool wifimanager::wifi_init_sta(void) {
     ESP_LOGE(TAG, "SSID is empty!");
     return false;
   }
-  
-  // Копируем пароль
+
   if (!ssid_pswd.empty()) {
     strlcpy((char*)wifi_config.sta.password, ssid_pswd.c_str(), sizeof(wifi_config.sta.password));
   } else {
@@ -338,12 +406,14 @@ bool wifimanager::set_ap(const std::string& ap, const std::string& password, boo
     ap_pswd = password;
     mode = WIFI_MODE_AP;
 
+    ESP_LOGI(TAG, "set_ap: Setting AP mode to WIFI_MODE_AP, AP name: %s", ap.c_str());
+    
     settings.set(KEY_AP, ap);
     settings.set(KEY_AP_PASSWORD, password);
     settings.set(KEY_WIFI_MODE, (uint8_t)WIFI_MODE_AP, need_save);
 
     xSemaphoreGive(mutex);
-    ESP_LOGI(TAG, "Установка имени точки доступа %s", ap_name.c_str());
+    ESP_LOGI(TAG, "set_ap: AP name set to %s", ap_name.c_str());
     return true;
   }
   return false;
@@ -374,4 +444,75 @@ bool wifimanager::set_mdns(const std::string& _mdns, bool need_save) {
     }
   }
   return false;
+}
+
+void wifimanager::get_wifi_state_json(char* json_out, size_t max_len) {
+  cJSON *root = cJSON_CreateObject();
+  cJSON_AddStringToObject(root, "type", "wifi_state");
+  
+  // Режим работы
+  const char* mode_str = (mode == WIFI_MODE_AP) ? "ap" : "sta";
+  cJSON_AddStringToObject(root, "mode", mode_str);
+  
+  // STA настройки (имя сети и пароль)
+  cJSON *sta = cJSON_CreateObject();
+  cJSON_AddStringToObject(sta, "ssid", ssid_name.c_str());
+  cJSON_AddStringToObject(sta, "password", ssid_pswd.c_str());
+  cJSON_AddItemToObject(root, "sta", sta);
+  
+  // AP настройки (имя точки доступа и пароль)
+  cJSON *ap = cJSON_CreateObject();
+  cJSON_AddStringToObject(ap, "ssid", ap_name.c_str());
+  cJSON_AddStringToObject(ap, "password", ap_pswd.c_str());
+  cJSON_AddItemToObject(root, "ap", ap);
+  
+  char *json_str = cJSON_PrintUnformatted(root);
+  if (json_str) {
+    strlcpy(json_out, json_str, max_len);
+    free(json_str);
+  } else {
+    json_out[0] = '\0';
+  }
+  cJSON_Delete(root);
+}
+
+void wifimanager::parse_command(char* json, size_t len) {
+  json[len] = '\0';
+  
+  cJSON *root = cJSON_Parse(json);
+  if (!root) return;
+
+  cJSON *cmd = cJSON_GetObjectItem(root, "wifi_cmd");
+  if (cmd && cJSON_IsString(cmd)) {
+    const char* mode = cmd->valuestring;
+    cJSON *ssid = cJSON_GetObjectItem(root, "ssid");
+    cJSON *password = cJSON_GetObjectItem(root, "password");
+    
+    if (ssid && cJSON_IsString(ssid) && password && cJSON_IsString(password)) {
+      ESP_LOGI(TAG, "wifi_cmd: mode=%s, ssid=%s", mode, ssid->valuestring);
+      
+      if (strcmp(mode, "sta") == 0) {
+        set_sta(ssid->valuestring, password->valuestring, true);
+      } else if (strcmp(mode, "ap") == 0) {
+        set_ap(ssid->valuestring, password->valuestring, true);
+      }
+    }
+  }
+
+  cJSON_Delete(root);
+  esp_restart();
+}
+
+void wifimanager::get_state_json(char* json_out, size_t max_len) {
+  cJSON *root = cJSON_CreateObject();
+  cJSON_AddStringToObject(root, "type", "wifi_state");
+
+  char *json_str = cJSON_PrintUnformatted(root);
+  if (json_str) {
+    strlcpy(json_out, json_str, max_len);
+    free(json_str);
+  } else {
+    json_out[0] = '\0';
+  }
+  cJSON_Delete(root);
 }

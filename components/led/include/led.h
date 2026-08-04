@@ -27,17 +27,17 @@ class led {
     NVSProxy settings;
 
     led_strip_handle_t led_strip = nullptr;
-    uint8_t* color_buffer = nullptr;
     SemaphoreHandle_t mutex = nullptr;
 
-    uint16_t led_count = 1;
-    uint8_t speed = 20;
-    uint8_t brightness = 20;
-    uint8_t mode = 1;
-    bool save_mode = false;
-
-    uint8_t r,g,b = 0;
-    void task();
+    protected:
+      uint8_t r,g,b = 0;
+      uint16_t led_count = 1;
+      uint8_t speed = 20;
+      uint8_t brightness = 20;
+      uint8_t mode = 1;
+      bool save_mode = false;
+      
+      virtual void task();
 
   public:
 
@@ -49,7 +49,7 @@ class led {
     bool init();
     void set_pixel(uint16_t pixel_count, uint8_t r, uint8_t g, uint8_t b);
 
-    void set_save_mode(bool new_save_mode) { settings.set(KEY_LED_SAVE_MODE, (uint8_t)new_save_mode, true); };
+    void set_save_mode(bool new_save_mode);
     void set_mode(uint8_t new_mode) { set_state(this->r, this->g, this->b, new_mode, this->speed, this->brightness); };
     void set_color(uint8_t new_r, uint8_t new_g, uint8_t new_b) { set_state(new_r, new_g, new_b, this->mode, this->speed, this->brightness); };
     void set_brightness(uint8_t new_brightness) { set_state(this->r, this->g, this->b, this->mode, this->speed, new_brightness); };
