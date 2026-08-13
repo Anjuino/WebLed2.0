@@ -4,10 +4,10 @@
 static std::string getHostname() {
   uint8_t mac[6];
   esp_read_mac(mac, ESP_MAC_WIFI_STA);
-  
+
   char macStr[7];
   sprintf(macStr, "%02X%02X%02X", mac[3], mac[4], mac[5]);
-  
+
   return "espled" + std::string(macStr);
 }
 
@@ -16,7 +16,7 @@ static std::string getmode(wifi_mode_t _mode) {
   if(_mode == WIFI_MODE_STA) sprintf(mode, "%s", "STA");
   else if(_mode == WIFI_MODE_AP) sprintf(mode, "%s", "AP");
   else if(_mode == WIFI_MODE_NULL) sprintf(mode, "%s", "NULL");
-  
+
   return std::string(mode);
 }
 
@@ -135,7 +135,6 @@ void wifimanager::ip_event_handler(void* arg, esp_event_base_t event_base, int32
 std::vector<wifi_ap_record_t> wifimanager::scan_wifi_networks() {
   std::vector<wifi_ap_record_t> ap_records;
 
-  // Проверяем, что WiFi инициализирован
   wifi_mode_t current_mode;
   if (esp_wifi_get_mode(&current_mode) != ESP_OK) {
     ESP_LOGE(TAG, "WiFi not initialized");
@@ -150,7 +149,6 @@ std::vector<wifi_ap_record_t> wifimanager::scan_wifi_networks() {
     need_switch_back = true;
     vTaskDelay(pdMS_TO_TICKS(1000));
   } else if (current_mode == WIFI_MODE_STA) {
-    // В STA режиме все ок, сканируем как есть
     ESP_LOGI(TAG, "Scanning in STA mode...");
   } else {
     ESP_LOGE(TAG, "Invalid WiFi mode for scanning");
@@ -223,7 +221,7 @@ bool wifimanager::wifi_init_ap(void) {
   } else {
     ESP_LOGI(TAG, "wifi_init_ap: STA netif already exists");
   }
-  
+
   if (ap_netif == nullptr) {
     ESP_LOGI(TAG, "wifi_init_ap: Creating AP netif...");
     ap_netif = esp_netif_create_default_wifi_ap();
@@ -307,8 +305,7 @@ bool wifimanager::wifi_init_sta(void) {
   } else {
     ESP_LOGI(TAG, "wifi_init_sta: STA netif already exists");
   }
-  
-  // Инициализируем WiFi только один раз
+
   if (!is_wifi_initialized) {
     ESP_LOGI(TAG, "wifi_init_sta: Initializing WiFi driver...");
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -336,8 +333,7 @@ bool wifimanager::wifi_init_sta(void) {
     wifi_config.sta.password[0] = '\0';
     ESP_LOGW(TAG, "Password is empty - connecting to open network");
   }
-  
-  // Настройки сканирования и подключения
+
   wifi_config.sta.scan_method = WIFI_FAST_SCAN;
   wifi_config.sta.sort_method = WIFI_CONNECT_AP_BY_SECURITY;
   wifi_config.sta.threshold.rssi = -127;
@@ -449,23 +445,20 @@ bool wifimanager::set_mdns(const std::string& _mdns, bool need_save) {
 void wifimanager::get_wifi_state_json(char* json_out, size_t max_len) {
   cJSON *root = cJSON_CreateObject();
   cJSON_AddStringToObject(root, "type", "wifi_state");
-  
-  // Режим работы
+
   const char* mode_str = (mode == WIFI_MODE_AP) ? "ap" : "sta";
   cJSON_AddStringToObject(root, "mode", mode_str);
-  
-  // STA настройки (имя сети и пароль)
+
   cJSON *sta = cJSON_CreateObject();
   cJSON_AddStringToObject(sta, "ssid", ssid_name.c_str());
   cJSON_AddStringToObject(sta, "password", ssid_pswd.c_str());
   cJSON_AddItemToObject(root, "sta", sta);
-  
-  // AP настройки (имя точки доступа и пароль)
+
   cJSON *ap = cJSON_CreateObject();
   cJSON_AddStringToObject(ap, "ssid", ap_name.c_str());
   cJSON_AddStringToObject(ap, "password", ap_pswd.c_str());
   cJSON_AddItemToObject(root, "ap", ap);
-  
+
   char *json_str = cJSON_PrintUnformatted(root);
   if (json_str) {
     strlcpy(json_out, json_str, max_len);
@@ -478,7 +471,7 @@ void wifimanager::get_wifi_state_json(char* json_out, size_t max_len) {
 
 void wifimanager::parse_command(char* json, size_t len) {
   json[len] = '\0';
-  
+
   cJSON *root = cJSON_Parse(json);
   if (!root) return;
 
@@ -487,10 +480,10 @@ void wifimanager::parse_command(char* json, size_t len) {
     const char* mode = cmd->valuestring;
     cJSON *ssid = cJSON_GetObjectItem(root, "ssid");
     cJSON *password = cJSON_GetObjectItem(root, "password");
-    
+
     if (ssid && cJSON_IsString(ssid) && password && cJSON_IsString(password)) {
       ESP_LOGI(TAG, "wifi_cmd: mode=%s, ssid=%s", mode, ssid->valuestring);
-      
+
       if (strcmp(mode, "sta") == 0) {
         set_sta(ssid->valuestring, password->valuestring, true);
       } else if (strcmp(mode, "ap") == 0) {
@@ -501,18 +494,4 @@ void wifimanager::parse_command(char* json, size_t len) {
 
   cJSON_Delete(root);
   esp_restart();
-}
-
-void wifimanager::get_state_json(char* json_out, size_t max_len) {
-  cJSON *root = cJSON_CreateObject();
-  cJSON_AddStringToObject(root, "type", "wifi_state");
-
-  char *json_str = cJSON_PrintUnformatted(root);
-  if (json_str) {
-    strlcpy(json_out, json_str, max_len);
-    free(json_str);
-  } else {
-    json_out[0] = '\0';
-  }
-  cJSON_Delete(root);
 }

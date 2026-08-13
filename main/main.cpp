@@ -1,6 +1,7 @@
 #include "stdint.h"
 #include "stdbool.h"
 #include "freertos/FreeRTOS.h" 
+#include "esp_timer.h"
 
 #include "esp_littlefs.h"
 #include "DeviceManager.h"
@@ -8,10 +9,12 @@
 #include "nvs_proxy.h"
 #include "mdns.h"
 #include "wifimanager.h"
-#include "https_server.h"
+#include "server.h"
+
 
 class led *wLed = nullptr;
 class wifimanager *wifi = nullptr;
+class server *serv = nullptr;
 
 const char *TAG = "main";
 
@@ -86,7 +89,7 @@ extern "C" void app_main ()
   vTaskDelay(pdMS_TO_TICKS(100));
   wifi = new wifimanager();
   //wifi->set_ap("WledTest", "87654321", true);
-  //wifi->set_sta("tTP-Link_467D", "66484608", true);
+  //wifi->set_sta("TP-Link_467D", "66484608", true);
   wifi->init();
 
   uint64_t timer = (esp_timer_get_time() / 1000) + 5000;
@@ -104,11 +107,11 @@ extern "C" void app_main ()
   vTaskDelay(pdMS_TO_TICKS(100));
 
   wLed = new led();
+  serv = new server(wLed);
 
-  esp_err_t ret = https_server_start(443);
-
+  esp_err_t ret = serv->start();
   if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "Failed to start HTTPS server");
+    ESP_LOGE(TAG, "Failed to start server");
     return;
   }
   vTaskDelay(pdMS_TO_TICKS(100));
@@ -117,5 +120,4 @@ extern "C" void app_main ()
   vTaskDelay(pdMS_TO_TICKS(100));
   xTaskCreate(memory_task, "WatchDevice", 4 * 1024, NULL, 2, NULL);
   vTaskDelete(NULL);
-  
 }

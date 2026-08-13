@@ -1,0 +1,14 @@
+menu "Server Configuration"
+
+    choice SERVER_PROTOCOL_CHOICE
+        prompt "Server Protocol"
+        help
+            Select HTTP or HTTPS protocol for the server
+        default SERVER_HTTP
+    config SERVER_HTTPS
+        bool "HTTPS (Secure)"
+    config SERVER_HTTP
+        bool "HTTP (Insecure)"
+    endchoice
+
+endmenu

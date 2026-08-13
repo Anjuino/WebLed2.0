@@ -2315,6 +2315,13 @@ CONFIG_MDNS_PREDEF_NETIF_AP=y
 CONFIG_MDNS_PREDEF_NETIF_ETH=y
 # end of MDNS Predefined interfaces
 # end of mDNS
+
+#
+# Server Configuration
+#
+# CONFIG_SERVER_HTTPS is not set
+CONFIG_SERVER_HTTP=y
+# end of Server Configuration
 # end of Component config
 
 # CONFIG_IDF_EXPERIMENTAL_FEATURES is not set

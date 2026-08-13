@@ -71,7 +71,7 @@ class wifimanager {
     bool set_ap(const std::string& ap, const std::string& password, bool need_save);
 
     wifi_mode_t get_mode() { return mode; };
-    void get_wifi_state_json(char* json_out, size_t max_len);
+
     bool set_mode(wifi_mode_t _mode, bool need_save);
 
     std::string get_mdns_name() { return mdns; };
@@ -80,7 +80,7 @@ class wifimanager {
     bool ready() { return is_ready; };
 
     void parse_command(char* json, size_t len);
-    void get_state_json(char* json_out, size_t max_len);
+    void get_wifi_state_json(char* json_out, size_t max_len);
 };
 
 #endif // WIFIMANAGER_H

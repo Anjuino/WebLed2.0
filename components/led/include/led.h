@@ -7,6 +7,7 @@
 #include "esp_log.h"
 #include "nvs_proxy.h"
 #include <cstring>
+#include <tuple>
 
 #define STORAGE_LED "controller"
 #define KEY_INIT "init"
@@ -30,7 +31,7 @@ class led {
     SemaphoreHandle_t mutex = nullptr;
 
     protected:
-      uint8_t r,g,b = 0;
+      uint8_t r = 0, g = 0, b = 0;
       uint16_t led_count = 1;
       uint8_t speed = 20;
       uint8_t brightness = 20;
@@ -61,6 +62,7 @@ class led {
     uint8_t get_brightness(void) { return brightness; };
     uint8_t get_mode(void) {return mode; };
     uint16_t get_count_led(void) { return led_count; };
+    std::tuple<uint8_t, uint8_t, uint8_t> get_color() { return {r, g, b}; };
 
     bool update_led_count(uint16_t new_count);
     void show(void);

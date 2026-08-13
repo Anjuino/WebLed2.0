@@ -15,19 +15,21 @@ led::led() : settings(STORAGE_LED, false)
     settings.set(KEY_LED_BRIGHTNESS, brightness);
     settings.set(KEY_LED_MODE, mode);
     settings.set(KEY_LED_SAVE_MODE, (uint8_t)save_mode);
-
+    settings.set(KEY_LED_COLOR_R, r);
+    settings.set(KEY_LED_COLOR_G, g);
+    settings.set(KEY_LED_COLOR_B, b);
     settings.set(KEY_INIT, (uint8_t)1, true);  //init для создания записи
 
     ESP_LOGI(TAG, "Первый запуск, сохраняем дефолтные состояния");
   } else {
     led_count = settings.get<uint16_t>(KEY_LED_COUNT, 1);
-    led_count = 256;
     speed = settings.get<uint8_t>(KEY_LED_SPEED, 10);
-    speed = 70;
     brightness = settings.get<uint8_t>(KEY_LED_BRIGHTNESS, 50);
-    brightness = 5;
     mode = settings.get<uint8_t>(KEY_LED_MODE, 1);
     save_mode = settings.get<uint8_t>(KEY_LED_SAVE_MODE, 0);
+    r = settings.get<uint8_t>(KEY_LED_COLOR_R, 0);
+    g = settings.get<uint8_t>(KEY_LED_COLOR_G, 0);
+    b = settings.get<uint8_t>(KEY_LED_COLOR_B, 0);
     ESP_LOGI(TAG, "Загружено из памяти: LEDs=%u, Скорость=%u, Яркость=%u, Режим=%u, Режим сохранения %s", led_count, speed, brightness, mode, save_mode ? "ON" : "OFF");
   }
 }
@@ -48,9 +50,8 @@ led::~led()
 
 bool led::init()
 {
-
   led_strip_config_t strip_config = {};
-  strip_config.strip_gpio_num = 4;                   //TODO поправить номер пина, добавить в настройку 2 для esp32wroom
+  strip_config.strip_gpio_num = 21;                   //TODO поправить номер пина, добавить в настройку 2 для esp32wroom
   strip_config.max_leds = led_count;
   strip_config.led_pixel_format = LED_PIXEL_FORMAT_GRB;
   strip_config.led_model = LED_MODEL_WS2812;
@@ -131,6 +132,7 @@ void led::task()
         delay = false;
         break;
 
+      case 254:
       case 255:
         delay = true;
         break;
@@ -274,6 +276,7 @@ void led::set_state(uint8_t _r, uint8_t _g, uint8_t _b, uint8_t _mode, uint8_t _
   }
 
   xSemaphoreGive(mutex);
+  if(mode == 255) off();
   if(mode == 254) fill_color(r, g, b);
 }
 
@@ -291,27 +294,27 @@ void led::rainbow()
   static uint16_t rainbow_offset = 0;
   for (uint16_t i = 0; i < led_count; i++) {
     uint16_t hue = (i * 255 / led_count + rainbow_offset) % 255;
-    uint8_t r, g, b;
+    uint8_t _r, _g, _b;
 
     if (hue < 85) {
-      r = 255 - hue * 3;
-      g = hue * 3;
-      b = 0;
+      _r = 255 - hue * 3;
+      _g = hue * 3;
+      _b = 0;
     } 
     else if (hue < 170) {
       hue -= 85;
-      r = 0;
-      g = 255 - hue * 3;
-      b = hue * 3;
+      _r = 0;
+      _g = 255 - hue * 3;
+      _b = hue * 3;
     } 
     else {
       hue -= 170;
-      r = hue * 3;
-      g = 0;
-      b = 255 - hue * 3;
+      _r = hue * 3;
+      _g = 0;
+      _b = 255 - hue * 3;
     }
 
-    set_pixel(i, r, g, b);
+    set_pixel(i, _r, _g, _b);
   }
 
   rainbow_offset = (rainbow_offset + 1) % 255;
