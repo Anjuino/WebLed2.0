@@ -103,7 +103,7 @@ extern "C" void app_main ()
     }
   }
 
-  //start_mdns();
+  start_mdns();
   vTaskDelay(pdMS_TO_TICKS(100));
 
   wLed = new led();
