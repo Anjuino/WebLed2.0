@@ -3,7 +3,7 @@ name: Build ESP32 WebLed2.0
 on:
   push:
     branches:
-      - master
+      - main
 
 jobs:
   build:
@@ -13,7 +13,7 @@ jobs:
     - name: Update repository
       run: |
         cd /root/Work/WebLed2.0
-        git pull https://${{ secrets.PAT }}@github.com/Anjuino/WebLed2.0.git master
+        git pull https://${{ secrets.PAT }}@github.com/Anjuino/WebLed2.0.git main
     
     - name: Setup ESP-IDF
       run: |
