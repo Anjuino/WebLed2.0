@@ -1,0 +1,43 @@
+name: Build ESP32 WebLed2.0
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: self-hosted
+    
+    steps:
+    - name: Update repository
+      run: |
+        cd /root/Work/WebLed2.0
+        git pull https://${{ secrets.PAT }}@github.com/Anjuino/WebLed2.0.git master
+    
+    - name: Setup ESP-IDF
+      run: |
+        source /root/esp/esp-idf/export.sh
+        echo "ESP-IDF version: $(idf.py --version)"
+    
+    - name: Clean build
+      run: |
+        cd /root/Work/WebLed2.0
+        source /root/esp/esp-idf/export.sh
+        idf.py fullclean
+    
+    - name: Build firmware
+      run: |
+        cd /root/Work/WebLed2.0
+        source /root/esp/esp-idf/export.sh
+        idf.py build
+    
+    - name: Check firmware
+      run: |
+        if [ -f "/root/Work/WebLed2.0/build/webled2.0.bin" ]; then
+          echo "✅ Firmware built successfully!"
+          ls -lh /root/Work/WebLed2.0/build/webled2.0.bin
+        else
+          echo "❌ Firmware not found!"
+          exit 1
+        fi
