@@ -34,7 +34,7 @@ jobs:
     
     - name: Check firmware
       run: |
-        if [ -f "/root/Work/WebLed2.0/build/webled2.0.bin" ]; then
+        if [ -f "/root/Work/WebLed2.0/build/WebLed2.0.bin" ]; then
           echo "✅ Firmware built successfully!"
           ls -lh /root/Work/WebLed2.0/build/webled2.0.bin
         else
