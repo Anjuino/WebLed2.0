@@ -12,6 +12,7 @@
 #include "DeviceManager.h"
 #include "cJSON.h"
 #include "wifimanager.h"
+#include "esp_ota_ops.h"
 
 #ifdef CONFIG_SERVER_HTTPS
 #include "esp_https_server.h"
@@ -22,8 +23,7 @@
 
 static const char *TAG = "Server";
 
-static esp_err_t send_resp_json(cJSON *resp, httpd_req_t *req)
-{
+static esp_err_t send_resp_json(cJSON *resp, httpd_req_t *req) {
   if(!resp) {
     ESP_LOGE(TAG, "Нет json объекта");
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Нет json объекта");
@@ -48,13 +48,11 @@ static esp_err_t send_resp_json(cJSON *resp, httpd_req_t *req)
 
   free(json);
   cJSON_Delete(resp);
-
   return err;
 }
 
 static esp_err_t api_led_info_handler(httpd_req_t *req) {
   led *wLed = (led*)req->user_ctx;
-
   cJSON *root = cJSON_CreateObject();
   if(root) {
     cJSON_AddNumberToObject(root, "speed", wLed->get_speed());
@@ -63,27 +61,64 @@ static esp_err_t api_led_info_handler(httpd_req_t *req) {
 
     auto [r, g, b] = wLed->get_color();
     cJSON *color = cJSON_CreateObject();
-
     if(color) {
       cJSON_AddNumberToObject(color, "r", r);
       cJSON_AddNumberToObject(color, "g", g);
       cJSON_AddNumberToObject(color, "b", b);
-
       cJSON_AddItemToObject(root, "color", color);
     } else {
       cJSON_Delete(root);
       return send_resp_json(NULL, req);
     }
   }
-
   return send_resp_json(root, req);
+}
+
+static esp_err_t api_led_control_handler(httpd_req_t *req) {
+  ESP_LOGI(TAG, "Запрос пришел");
+  led *wLed = (led*)req->user_ctx;
+
+  char buf[256] = {0};
+  int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
+  if(ret <= 0) {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Empty body");
+    return ESP_FAIL;
+  }
+
+  cJSON *root = cJSON_Parse(buf);
+  if(!root) {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+    return ESP_FAIL;
+  }
+
+  cJSON *speed = cJSON_GetObjectItem(root, "speed");
+  if(cJSON_IsNumber(speed)) wLed->set_speed(speed->valueint);
+
+  cJSON *mode = cJSON_GetObjectItem(root, "mode");
+  if(cJSON_IsNumber(mode)) wLed->set_mode(mode->valueint);
+
+  cJSON *brightness = cJSON_GetObjectItem(root, "brightness");
+  if(cJSON_IsNumber(brightness)) wLed->set_brightness(brightness->valueint);
+
+  cJSON *color = cJSON_GetObjectItem(root, "color");
+  if(cJSON_IsObject(color)) {
+    cJSON *r = cJSON_GetObjectItem(color, "r");
+    cJSON *g = cJSON_GetObjectItem(color, "g");
+    cJSON *b = cJSON_GetObjectItem(color, "b");
+    if(cJSON_IsNumber(r) && cJSON_IsNumber(g) && cJSON_IsNumber(b)) {
+      wLed->set_color(r->valueint, g->valueint, b->valueint);
+    }
+  }
+
+  cJSON_Delete(root);
+  cJSON *resp = cJSON_CreateObject();
+  cJSON_AddBoolToObject(resp, "success", true);
+  return send_resp_json(resp, req);
 }
 
 static esp_err_t api_device_info_handler(httpd_req_t *req) {
   cJSON *root = cJSON_CreateObject();
-  if(!root) {
-    return send_resp_json(NULL, req);
-  }
+  if(!root) return send_resp_json(NULL, req);
 
   memory_info memory = getstatus();
   double temperature = round(memory.temperature * 100.0) / 100.0;
@@ -131,60 +166,101 @@ static esp_err_t api_device_info_handler(httpd_req_t *req) {
   }
 
   cJSON_AddItemToObject(root, "wifi_networks", wifi_array);
-
   return send_resp_json(root, req);
 }
 
-static esp_err_t api_led_control_handler(httpd_req_t *req) {
-  ESP_LOGI(TAG, "Запрос пришел");
-
-  led *wLed = (led*)req->user_ctx;
-
-  char buf[256] = {0};
-  int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
-
-  if(ret <= 0) {
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Empty body");
+static esp_err_t ota_upload_handler(httpd_req_t *req) {
+  server *srv = (server*)req->user_ctx;
+  if (!srv) {
+    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Server context null");
     return ESP_FAIL;
   }
 
-  cJSON *root = cJSON_Parse(buf);
-  if(!root) {
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+  ESP_LOGI(TAG, "OTA upload via HTTP started");
+  
+  char content_len_str[16];
+  size_t content_len = 0;
+  if (httpd_req_get_hdr_value_str(req, "Content-Length", content_len_str, sizeof(content_len_str)) == ESP_OK) {
+    content_len = atoi(content_len_str);
+  } else {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Content-Length header required");
     return ESP_FAIL;
   }
 
-  cJSON *speed = cJSON_GetObjectItem(root, "speed");
-  if(cJSON_IsNumber(speed)) {
-    wLed->set_speed(speed->valueint);
+  const esp_partition_t *ota_partition = esp_ota_get_next_update_partition(NULL);
+  if (!ota_partition) {
+    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No OTA partition");
+    return ESP_FAIL;
   }
 
-  cJSON *mode = cJSON_GetObjectItem(root, "mode");
-  if(cJSON_IsNumber(mode)) {
-    wLed->set_mode(mode->valueint);
+  if (content_len > ota_partition->size) {
+    httpd_resp_send_err(req, HTTPD_413_CONTENT_TOO_LARGE, "Firmware too large");
+    return ESP_FAIL;
   }
 
-  cJSON *brightness = cJSON_GetObjectItem(root, "brightness");
-  if(cJSON_IsNumber(brightness)) {
-    wLed->set_brightness(brightness->valueint);
+  esp_ota_handle_t ota_handle = 0;
+  esp_err_t err = esp_ota_begin(ota_partition, OTA_SIZE_UNKNOWN, &ota_handle);
+  if (err != ESP_OK) {
+    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OTA begin failed");
+    return ESP_FAIL;
   }
 
-  cJSON *color = cJSON_GetObjectItem(root, "color");
-  if(cJSON_IsObject(color)) {
-    cJSON *r = cJSON_GetObjectItem(color, "r");
-    cJSON *g = cJSON_GetObjectItem(color, "g");
-    cJSON *b = cJSON_GetObjectItem(color, "b");
+  char buf[4096];
+  size_t remaining = content_len;
+  size_t progress = 0;
 
-    if(cJSON_IsNumber(r) && cJSON_IsNumber(g) && cJSON_IsNumber(b)) {
-      wLed->set_color(r->valueint, g->valueint, b->valueint);
+  while (remaining > 0) {
+    int to_read = (remaining < sizeof(buf)) ? remaining : sizeof(buf);
+    int recv_len = httpd_req_recv(req, buf, to_read);
+
+    if (recv_len <= 0) {
+      if (recv_len == HTTPD_SOCK_ERR_TIMEOUT) continue;
+      ESP_LOGE(TAG, "Receive error");
+      esp_ota_abort(ota_handle);
+      httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Receive failed");
+      return ESP_FAIL;
+    }
+    
+    err = esp_ota_write(ota_handle, buf, recv_len);
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "Flash write failed: %s", esp_err_to_name(err));
+      esp_ota_abort(ota_handle);
+      httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Flash write failed");
+      return ESP_FAIL;
+    }
+
+    remaining -= recv_len;
+    progress += recv_len;
+    
+    if ((progress * 100 / content_len) % 10 == 0) {
+      ESP_LOGI(TAG, "OTA progress: %d%%", (int)(progress * 100 / content_len));
     }
   }
 
+  err = esp_ota_end(ota_handle);
+  if (err != ESP_OK) {
+      ESP_LOGE(TAG, "OTA end failed: %s", esp_err_to_name(err));
+      httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OTA end failed");
+      return ESP_FAIL;
+  }
 
-  cJSON_Delete(root);
+  err = esp_ota_set_boot_partition(ota_partition);
+  if (err != ESP_OK) {
+      ESP_LOGE(TAG, "Set boot partition failed: %s", esp_err_to_name(err));
+      httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Set boot partition failed");
+      return ESP_FAIL;
+  }
+  
   cJSON *resp = cJSON_CreateObject();
   cJSON_AddBoolToObject(resp, "success", true);
-  return send_resp_json(resp, req);
+  cJSON_AddStringToObject(resp, "message", "OTA update successful! Rebooting...");
+
+  ESP_LOGI(TAG, "OTA update successful, restarting in 2 seconds...");
+  esp_err_t ret = send_resp_json(resp, req);
+  vTaskDelay(2000 / portTICK_PERIOD_MS);
+  esp_restart();
+
+  return ret;
 }
 
 #ifdef CONFIG_SERVER_HTTPS
@@ -216,9 +292,7 @@ void server::checkCertificate() {
 #endif
 
 server::server(class led *_led) {
-  if(_led) {
-    wLed = _led;
-  }
+  if(_led) wLed = _led;
 }
 
 server::~server() {
@@ -246,16 +320,13 @@ esp_err_t server::start() {
 
   ssl_config.servercert = (const uint8_t *)cert_cert_crt_start;
   ssl_config.servercert_len = cert_len;
-
   ssl_config.prvtkey_pem = (const uint8_t *)cert_private_key_start;
   ssl_config.prvtkey_len = key_len;
-
   ssl_config.cacert_pem = (const uint8_t *)cert_ca_crt_start;
   ssl_config.cacert_len = ca_len;
 
   ssl_config.httpd.recv_wait_timeout = 15;
   ssl_config.httpd.send_wait_timeout = 15;
-
   ssl_config.transport_mode = HTTPD_SSL_TRANSPORT_SECURE;
   ssl_config.tls_handshake_timeout_ms = 5000;
   ssl_config.session_tickets = true;
@@ -272,8 +343,8 @@ esp_err_t server::start() {
   config.recv_wait_timeout = 5;
   config.send_wait_timeout = 5;
   config.task_priority = 10;
-  config.max_open_sockets = 5;
-  config.stack_size = 6 * 1024;
+  config.max_open_sockets = 6;
+  config.stack_size = 15 * 1024;
 
   esp_err_t err = httpd_start(&m_server, &config);
 #endif
@@ -286,14 +357,6 @@ esp_err_t server::start() {
     #endif
       return err;
   }
-
-  httpd_uri_t device_info_handler = {
-    .uri = "/api/deviceinfo",
-    .method = HTTP_GET,
-    .handler = api_device_info_handler,
-    .user_ctx = nullptr
-  };
-  httpd_register_uri_handler(m_server, &device_info_handler);
 
   httpd_uri_t led_info_handler = {
     .uri = "/api/ledinfo",
@@ -311,6 +374,23 @@ esp_err_t server::start() {
   };
   httpd_register_uri_handler(m_server, &led_control_handler);
 
+  httpd_uri_t device_info_handler = {
+    .uri = "/api/deviceinfo",
+    .method = HTTP_GET,
+    .handler = api_device_info_handler,
+    .user_ctx = nullptr
+  };
+  httpd_register_uri_handler(m_server, &device_info_handler);
+
+  httpd_uri_t ota_upload = {
+    .uri = "/api/ota/upload",
+    .method = HTTP_POST,
+    .handler = ota_upload_handler,
+    .user_ctx = this
+  };
+  httpd_register_uri_handler(m_server, &ota_upload);
+
+  ESP_LOGI(TAG, "Server started successfully");
   return ESP_OK;
 }
 
