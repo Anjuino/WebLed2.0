@@ -1,7 +1,30 @@
 #include "led.h"
+#include "led_effects.h"
+
+const LedEffect *led::find_effect(uint8_t id) const
+{
+  for (const auto &fx : effects_table) {
+    if (fx.id == id) return &fx;
+  }
+  return nullptr;
+}
+
+const LedEffect *led::effects(size_t *count) const
+{
+  if (count) *count = effects_table.size();
+  return effects_table.data();
+}
+
+void led::add_effect(uint8_t id, const char *name, bool continuous,
+                      void (*apply)(led *self, void *user_data), void *user_data)
+{
+  effects_table.push_back({ id, name, continuous, apply, user_data });
+}
 
 led::led() : settings(STORAGE_LED, false)
 {
+  register_builtin_effects(this);
+
   mutex = xSemaphoreCreateMutex();
   if (mutex == nullptr) {
     ESP_LOGE(TAG, "Не удалось создать мьютекс!");
@@ -78,7 +101,6 @@ bool led::update_led_count(uint16_t new_led_count)
   }
 
   ESP_LOGI(TAG, "Обновление количества светодоидов, текущее %u", led_count);
-  uint16_t old_mode = mode;
   off();
   vTaskDelay(pdMS_TO_TICKS(100));
 
@@ -94,7 +116,6 @@ bool led::update_led_count(uint16_t new_led_count)
   led_count = new_led_count;
 
   if (init()) {
-    mode = old_mode;
     xSemaphoreGive(mutex);
     ESP_LOGI(TAG, "Обновление успешно %u", new_led_count);
     return true;
@@ -123,22 +144,13 @@ void led::task()
 {
   this->init();
   while (true) {
-    static bool delay = false;
+    const LedEffect *fx = find_effect(mode);
 
-    switch (mode)
-    {
-      case 1:
-        rainbow();
-        delay = false;
-        break;
-
-      case 254:
-      case 255:
-        delay = true;
-        break;
+    if (fx && fx->continuous) {
+      fx->apply(this, fx->user_data);
+    } else {
+      vTaskDelay(pdMS_TO_TICKS(500));
     }
-
-    if (delay) vTaskDelay(pdMS_TO_TICKS(200));
   }
 }
 
@@ -147,18 +159,8 @@ void led::show(void)
   led_strip_refresh(led_strip);
 }
 
-void led::fill_color(uint8_t r, uint8_t g, uint8_t b)
-{
-  for (int i = 0; i < led_count; i++) {
-    set_pixel(i, r, g, b); 
-  }
-
-  show();
-}
-
 void led::off(void)
 {
-  mode = 255;
   led_strip_clear(led_strip);
 }
 
@@ -276,8 +278,11 @@ void led::set_state(uint8_t _r, uint8_t _g, uint8_t _b, uint8_t _mode, uint8_t _
   }
 
   xSemaphoreGive(mutex);
-  if(mode == 255) off();
-  if(mode == 254) fill_color(r, g, b);
+
+  const LedEffect *fx = find_effect(mode);
+  if (fx && !fx->continuous) {
+    fx->apply(this, fx->user_data);
+  }
 }
 
 void led::set_save_mode(bool new_save_mode)
@@ -287,37 +292,4 @@ void led::set_save_mode(bool new_save_mode)
     save_mode = new_save_mode;
     settings.set(KEY_LED_SAVE_MODE, (uint8_t)new_save_mode, true);
   }
-}
-
-void led::rainbow()
-{
-  static uint16_t rainbow_offset = 0;
-  for (uint16_t i = 0; i < led_count; i++) {
-    uint16_t hue = (i * 255 / led_count + rainbow_offset) % 255;
-    uint8_t _r, _g, _b;
-
-    if (hue < 85) {
-      _r = 255 - hue * 3;
-      _g = hue * 3;
-      _b = 0;
-    } 
-    else if (hue < 170) {
-      hue -= 85;
-      _r = 0;
-      _g = 255 - hue * 3;
-      _b = hue * 3;
-    } 
-    else {
-      hue -= 170;
-      _r = hue * 3;
-      _g = 0;
-      _b = 255 - hue * 3;
-    }
-
-    set_pixel(i, _r, _g, _b);
-  }
-
-  rainbow_offset = (rainbow_offset + 1) % 255;
-  show();
-  vTaskDelay(pdMS_TO_TICKS(110 - speed));
 }

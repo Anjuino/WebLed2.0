@@ -7,11 +7,13 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include <vector>
+#include <algorithm>
 #include <math.h>
 #include <tuple>
 #include "DeviceManager.h"
 #include "cJSON.h"
 #include "wifimanager.h"
+#include "http_json.h"
 
 #ifdef CONFIG_SERVER_HTTPS
 #include "esp_https_server.h"
@@ -22,39 +24,8 @@
 
 static const char *TAG = "Server";
 
-static esp_err_t send_resp_json(cJSON *resp, httpd_req_t *req)
-{
-  if(!resp) {
-    ESP_LOGE(TAG, "Нет json объекта");
-    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Нет json объекта");
-    return ESP_FAIL;
-  } 
-
-  char *json = cJSON_Print(resp);
-  if(!json) {
-    ESP_LOGE(TAG, "Не удалось создать json строку");
-    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Не удалось создать json строку");
-    cJSON_Delete(resp);
-    return ESP_FAIL;
-  }
-
-  httpd_resp_set_type(req, "application/json");
-  esp_err_t err = httpd_resp_sendstr(req, json);
-
-  if(err != ESP_OK) {
-    ESP_LOGE(TAG, "Ошибка отправки %s", esp_err_to_name(err));
-    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Internal Server Error");
-  }
-
-  free(json);
-  cJSON_Delete(resp);
-
-  return err;
-}
-
 static esp_err_t api_led_info_handler(httpd_req_t *req) {
   led *wLed = (led*)req->user_ctx;
-
   cJSON *root = cJSON_CreateObject();
   if(root) {
     cJSON_AddNumberToObject(root, "speed", wLed->get_speed());
@@ -63,27 +34,90 @@ static esp_err_t api_led_info_handler(httpd_req_t *req) {
 
     auto [r, g, b] = wLed->get_color();
     cJSON *color = cJSON_CreateObject();
-
     if(color) {
       cJSON_AddNumberToObject(color, "r", r);
       cJSON_AddNumberToObject(color, "g", g);
       cJSON_AddNumberToObject(color, "b", b);
-
       cJSON_AddItemToObject(root, "color", color);
     } else {
       cJSON_Delete(root);
       return send_resp_json(NULL, req);
     }
+
+    cJSON *modes = cJSON_CreateArray();
+    if(modes) {
+      size_t effects_count = 0;
+      const LedEffect *effects = wLed->effects(&effects_count);
+
+      std::vector<LedEffect> sorted_effects(effects, effects + effects_count);
+      std::sort(sorted_effects.begin(), sorted_effects.end(), [](const LedEffect &a, const LedEffect &b) { return a.id < b.id; });
+
+      for (const auto &fx : sorted_effects) {
+        cJSON *m = cJSON_CreateObject();
+        if (m) {
+          cJSON_AddNumberToObject(m, "id_mode", fx.id);
+          cJSON_AddStringToObject(m, "name", fx.name);
+          cJSON_AddItemToArray(modes, m);
+        }
+      }
+      cJSON_AddItemToObject(root, "modes", modes);
+    } else {
+      cJSON_Delete(root);
+      return send_resp_json(NULL, req);
+    }
+  }
+  return send_resp_json(root, req);
+}
+
+static esp_err_t api_led_control_handler(httpd_req_t *req) {
+  ESP_LOGI(TAG, "Запрос пришел");
+  led *wLed = (led*)req->user_ctx;
+
+  char buf[256] = {0};
+  int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
+  if(ret <= 0) {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Empty body");
+    return ESP_FAIL;
   }
 
-  return send_resp_json(root, req);
+  cJSON *root = cJSON_Parse(buf);
+  if(!root) {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+    return ESP_FAIL;
+  }
+
+  cJSON *mode = cJSON_GetObjectItem(root, "mode");
+  if(cJSON_IsNumber(mode) && !wLed->is_valid_mode((uint8_t)mode->valueint)) {
+    cJSON_Delete(root);
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Unknown mode id");
+    return ESP_FAIL;
+  }
+
+  cJSON *speed = cJSON_GetObjectItem(root, "speed");
+  if(cJSON_IsNumber(speed)) wLed->set_speed(speed->valueint);
+
+  if(cJSON_IsNumber(mode)) wLed->set_mode(mode->valueint);
+
+  cJSON *brightness = cJSON_GetObjectItem(root, "brightness");
+  if(cJSON_IsNumber(brightness)) wLed->set_brightness(brightness->valueint);
+
+  cJSON *color = cJSON_GetObjectItem(root, "color");
+  if(cJSON_IsObject(color)) {
+    cJSON *r = cJSON_GetObjectItem(color, "r");
+    cJSON *g = cJSON_GetObjectItem(color, "g");
+    cJSON *b = cJSON_GetObjectItem(color, "b");
+    if(cJSON_IsNumber(r) && cJSON_IsNumber(g) && cJSON_IsNumber(b)) {
+      wLed->set_color(r->valueint, g->valueint, b->valueint);
+    }
+  }
+
+  cJSON_Delete(root);
+  return send_json_status(req, "success", true, nullptr, nullptr);
 }
 
 static esp_err_t api_device_info_handler(httpd_req_t *req) {
   cJSON *root = cJSON_CreateObject();
-  if(!root) {
-    return send_resp_json(NULL, req);
-  }
+  if(!root) return send_resp_json(NULL, req);
 
   memory_info memory = getstatus();
   double temperature = round(memory.temperature * 100.0) / 100.0;
@@ -131,60 +165,7 @@ static esp_err_t api_device_info_handler(httpd_req_t *req) {
   }
 
   cJSON_AddItemToObject(root, "wifi_networks", wifi_array);
-
   return send_resp_json(root, req);
-}
-
-static esp_err_t api_led_control_handler(httpd_req_t *req) {
-  ESP_LOGI(TAG, "Запрос пришел");
-
-  led *wLed = (led*)req->user_ctx;
-
-  char buf[256] = {0};
-  int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
-
-  if(ret <= 0) {
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Empty body");
-    return ESP_FAIL;
-  }
-
-  cJSON *root = cJSON_Parse(buf);
-  if(!root) {
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
-    return ESP_FAIL;
-  }
-
-  cJSON *speed = cJSON_GetObjectItem(root, "speed");
-  if(cJSON_IsNumber(speed)) {
-    wLed->set_speed(speed->valueint);
-  }
-
-  cJSON *mode = cJSON_GetObjectItem(root, "mode");
-  if(cJSON_IsNumber(mode)) {
-    wLed->set_mode(mode->valueint);
-  }
-
-  cJSON *brightness = cJSON_GetObjectItem(root, "brightness");
-  if(cJSON_IsNumber(brightness)) {
-    wLed->set_brightness(brightness->valueint);
-  }
-
-  cJSON *color = cJSON_GetObjectItem(root, "color");
-  if(cJSON_IsObject(color)) {
-    cJSON *r = cJSON_GetObjectItem(color, "r");
-    cJSON *g = cJSON_GetObjectItem(color, "g");
-    cJSON *b = cJSON_GetObjectItem(color, "b");
-
-    if(cJSON_IsNumber(r) && cJSON_IsNumber(g) && cJSON_IsNumber(b)) {
-      wLed->set_color(r->valueint, g->valueint, b->valueint);
-    }
-  }
-
-
-  cJSON_Delete(root);
-  cJSON *resp = cJSON_CreateObject();
-  cJSON_AddBoolToObject(resp, "success", true);
-  return send_resp_json(resp, req);
 }
 
 #ifdef CONFIG_SERVER_HTTPS
@@ -216,9 +197,7 @@ void server::checkCertificate() {
 #endif
 
 server::server(class led *_led) {
-  if(_led) {
-    wLed = _led;
-  }
+  if(_led) wLed = _led;
 }
 
 server::~server() {
@@ -246,16 +225,13 @@ esp_err_t server::start() {
 
   ssl_config.servercert = (const uint8_t *)cert_cert_crt_start;
   ssl_config.servercert_len = cert_len;
-
   ssl_config.prvtkey_pem = (const uint8_t *)cert_private_key_start;
   ssl_config.prvtkey_len = key_len;
-
   ssl_config.cacert_pem = (const uint8_t *)cert_ca_crt_start;
   ssl_config.cacert_len = ca_len;
 
   ssl_config.httpd.recv_wait_timeout = 15;
   ssl_config.httpd.send_wait_timeout = 15;
-
   ssl_config.transport_mode = HTTPD_SSL_TRANSPORT_SECURE;
   ssl_config.tls_handshake_timeout_ms = 5000;
   ssl_config.session_tickets = true;
@@ -272,8 +248,8 @@ esp_err_t server::start() {
   config.recv_wait_timeout = 5;
   config.send_wait_timeout = 5;
   config.task_priority = 10;
-  config.max_open_sockets = 5;
-  config.stack_size = 6 * 1024;
+  config.max_open_sockets = 6;
+  config.stack_size = 15 * 1024;
 
   esp_err_t err = httpd_start(&m_server, &config);
 #endif
@@ -287,16 +263,8 @@ esp_err_t server::start() {
       return err;
   }
 
-  httpd_uri_t device_info_handler = {
-    .uri = "/api/deviceinfo",
-    .method = HTTP_GET,
-    .handler = api_device_info_handler,
-    .user_ctx = nullptr
-  };
-  httpd_register_uri_handler(m_server, &device_info_handler);
-
   httpd_uri_t led_info_handler = {
-    .uri = "/api/ledinfo",
+    .uri = "/api/led",
     .method = HTTP_GET,
     .handler = api_led_info_handler,
     .user_ctx = wLed
@@ -311,6 +279,17 @@ esp_err_t server::start() {
   };
   httpd_register_uri_handler(m_server, &led_control_handler);
 
+  httpd_uri_t device_info_handler = {
+    .uri = "/api/deviceinfo",
+    .method = HTTP_GET,
+    .handler = api_device_info_handler,
+    .user_ctx = nullptr
+  };
+  httpd_register_uri_handler(m_server, &device_info_handler);
+
+  m_ota.register_handlers(m_server);
+
+  ESP_LOGI(TAG, "Server started successfully");
   return ESP_OK;
 }
 

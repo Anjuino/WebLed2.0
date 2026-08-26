@@ -5,12 +5,14 @@
 #include "esp_err.h"
 #include "esp_http_server.h"
 #include "led.h"
+#include "ota.h"
 
 class server {
   private:
 
     class led *wLed = nullptr;
     httpd_handle_t m_server = nullptr;
+    OtaManager m_ota;
 
     #ifdef CONFIG_SERVER_HTTPS
       void checkCertificate();
