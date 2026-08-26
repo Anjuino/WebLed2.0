@@ -8,6 +8,7 @@
 #include "nvs_proxy.h"
 #include <cstring>
 #include <tuple>
+#include <vector>
 
 #define STORAGE_LED "controller"
 #define KEY_INIT "init"
@@ -22,6 +23,21 @@
 #define KEY_LED_COLOR_G "color_g"
 #define KEY_LED_COLOR_B "color_b"
 
+class led;
+
+struct LedEffect {
+  uint8_t id;                                  // Порядковый номер режима
+  const char *name;                            // Имя режима
+  bool continuous;                             // true - для анимаций, false - разовое включение
+  void (*apply)(led *self, void *user_data);   // Функция для исполнения — обычная свободная
+                                               // функция с led* явным параметром, а не метод
+                                               // класса led. Это специально: скрипт-эффекты
+                                               // будут жить не внутри класса led.
+  void *user_data;                             // Контекст конкретного эффекта (например,
+                                               // хендл скомпилированного скрипта). Для
+                                               // встроенных режимов не используется — nullptr.
+};
+
 class led {
   private:
     const char *TAG = "Led";
@@ -30,6 +46,8 @@ class led {
     led_strip_handle_t led_strip = nullptr;
     SemaphoreHandle_t mutex = nullptr;
 
+    std::vector<LedEffect> effects_table;
+
     protected:
       uint8_t r = 0, g = 0, b = 0;
       uint16_t led_count = 1;
@@ -37,8 +55,10 @@ class led {
       uint8_t brightness = 20;
       uint8_t mode = 1;
       bool save_mode = false;
-      
+
       virtual void task();
+
+      const LedEffect *find_effect(uint8_t id) const;
 
   public:
 
@@ -46,6 +66,13 @@ class led {
     ~led();
 
     static void task_entry(void* pvParameters) { static_cast<led*>(pvParameters)->task(); };
+
+    const LedEffect *effects(size_t *count) const;
+
+    bool is_valid_mode(uint8_t id) const { return find_effect(id) != nullptr; };
+
+    void add_effect(uint8_t id, const char *name, bool continuous,
+                     void (*apply)(led *self, void *user_data), void *user_data = nullptr);
 
     bool init();
     void set_pixel(uint16_t pixel_count, uint8_t r, uint8_t g, uint8_t b);
@@ -68,8 +95,6 @@ class led {
     void show(void);
 
     void off(void);
-    void fill_color(uint8_t r, uint8_t g, uint8_t b);
-    void rainbow();
 
 };
 

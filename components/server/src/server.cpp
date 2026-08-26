@@ -7,12 +7,13 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include <vector>
+#include <algorithm>
 #include <math.h>
 #include <tuple>
 #include "DeviceManager.h"
 #include "cJSON.h"
 #include "wifimanager.h"
-#include "esp_ota_ops.h"
+#include "http_json.h"
 
 #ifdef CONFIG_SERVER_HTTPS
 #include "esp_https_server.h"
@@ -22,34 +23,6 @@
 #endif
 
 static const char *TAG = "Server";
-
-static esp_err_t send_resp_json(cJSON *resp, httpd_req_t *req) {
-  if(!resp) {
-    ESP_LOGE(TAG, "Нет json объекта");
-    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Нет json объекта");
-    return ESP_FAIL;
-  } 
-
-  char *json = cJSON_Print(resp);
-  if(!json) {
-    ESP_LOGE(TAG, "Не удалось создать json строку");
-    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Не удалось создать json строку");
-    cJSON_Delete(resp);
-    return ESP_FAIL;
-  }
-
-  httpd_resp_set_type(req, "application/json");
-  esp_err_t err = httpd_resp_sendstr(req, json);
-
-  if(err != ESP_OK) {
-    ESP_LOGE(TAG, "Ошибка отправки %s", esp_err_to_name(err));
-    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Internal Server Error");
-  }
-
-  free(json);
-  cJSON_Delete(resp);
-  return err;
-}
 
 static esp_err_t api_led_info_handler(httpd_req_t *req) {
   led *wLed = (led*)req->user_ctx;
@@ -66,6 +39,28 @@ static esp_err_t api_led_info_handler(httpd_req_t *req) {
       cJSON_AddNumberToObject(color, "g", g);
       cJSON_AddNumberToObject(color, "b", b);
       cJSON_AddItemToObject(root, "color", color);
+    } else {
+      cJSON_Delete(root);
+      return send_resp_json(NULL, req);
+    }
+
+    cJSON *modes = cJSON_CreateArray();
+    if(modes) {
+      size_t effects_count = 0;
+      const LedEffect *effects = wLed->effects(&effects_count);
+
+      std::vector<LedEffect> sorted_effects(effects, effects + effects_count);
+      std::sort(sorted_effects.begin(), sorted_effects.end(), [](const LedEffect &a, const LedEffect &b) { return a.id < b.id; });
+
+      for (const auto &fx : sorted_effects) {
+        cJSON *m = cJSON_CreateObject();
+        if (m) {
+          cJSON_AddNumberToObject(m, "id_mode", fx.id);
+          cJSON_AddStringToObject(m, "name", fx.name);
+          cJSON_AddItemToArray(modes, m);
+        }
+      }
+      cJSON_AddItemToObject(root, "modes", modes);
     } else {
       cJSON_Delete(root);
       return send_resp_json(NULL, req);
@@ -91,10 +86,16 @@ static esp_err_t api_led_control_handler(httpd_req_t *req) {
     return ESP_FAIL;
   }
 
+  cJSON *mode = cJSON_GetObjectItem(root, "mode");
+  if(cJSON_IsNumber(mode) && !wLed->is_valid_mode((uint8_t)mode->valueint)) {
+    cJSON_Delete(root);
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Unknown mode id");
+    return ESP_FAIL;
+  }
+
   cJSON *speed = cJSON_GetObjectItem(root, "speed");
   if(cJSON_IsNumber(speed)) wLed->set_speed(speed->valueint);
 
-  cJSON *mode = cJSON_GetObjectItem(root, "mode");
   if(cJSON_IsNumber(mode)) wLed->set_mode(mode->valueint);
 
   cJSON *brightness = cJSON_GetObjectItem(root, "brightness");
@@ -111,9 +112,7 @@ static esp_err_t api_led_control_handler(httpd_req_t *req) {
   }
 
   cJSON_Delete(root);
-  cJSON *resp = cJSON_CreateObject();
-  cJSON_AddBoolToObject(resp, "success", true);
-  return send_resp_json(resp, req);
+  return send_json_status(req, "success", true, nullptr, nullptr);
 }
 
 static esp_err_t api_device_info_handler(httpd_req_t *req) {
@@ -167,100 +166,6 @@ static esp_err_t api_device_info_handler(httpd_req_t *req) {
 
   cJSON_AddItemToObject(root, "wifi_networks", wifi_array);
   return send_resp_json(root, req);
-}
-
-static esp_err_t ota_upload_handler(httpd_req_t *req) {
-  server *srv = (server*)req->user_ctx;
-  if (!srv) {
-    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Server context null");
-    return ESP_FAIL;
-  }
-
-  ESP_LOGI(TAG, "OTA upload via HTTP started");
-  
-  char content_len_str[16];
-  size_t content_len = 0;
-  if (httpd_req_get_hdr_value_str(req, "Content-Length", content_len_str, sizeof(content_len_str)) == ESP_OK) {
-    content_len = atoi(content_len_str);
-  } else {
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Content-Length header required");
-    return ESP_FAIL;
-  }
-
-  const esp_partition_t *ota_partition = esp_ota_get_next_update_partition(NULL);
-  if (!ota_partition) {
-    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No OTA partition");
-    return ESP_FAIL;
-  }
-
-  if (content_len > ota_partition->size) {
-    httpd_resp_send_err(req, HTTPD_413_CONTENT_TOO_LARGE, "Firmware too large");
-    return ESP_FAIL;
-  }
-
-  esp_ota_handle_t ota_handle = 0;
-  esp_err_t err = esp_ota_begin(ota_partition, OTA_SIZE_UNKNOWN, &ota_handle);
-  if (err != ESP_OK) {
-    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OTA begin failed");
-    return ESP_FAIL;
-  }
-
-  char buf[4096];
-  size_t remaining = content_len;
-  size_t progress = 0;
-
-  while (remaining > 0) {
-    int to_read = (remaining < sizeof(buf)) ? remaining : sizeof(buf);
-    int recv_len = httpd_req_recv(req, buf, to_read);
-
-    if (recv_len <= 0) {
-      if (recv_len == HTTPD_SOCK_ERR_TIMEOUT) continue;
-      ESP_LOGE(TAG, "Receive error");
-      esp_ota_abort(ota_handle);
-      httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Receive failed");
-      return ESP_FAIL;
-    }
-    
-    err = esp_ota_write(ota_handle, buf, recv_len);
-    if (err != ESP_OK) {
-      ESP_LOGE(TAG, "Flash write failed: %s", esp_err_to_name(err));
-      esp_ota_abort(ota_handle);
-      httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Flash write failed");
-      return ESP_FAIL;
-    }
-
-    remaining -= recv_len;
-    progress += recv_len;
-    
-    if ((progress * 100 / content_len) % 10 == 0) {
-      ESP_LOGI(TAG, "OTA progress: %d%%", (int)(progress * 100 / content_len));
-    }
-  }
-
-  err = esp_ota_end(ota_handle);
-  if (err != ESP_OK) {
-      ESP_LOGE(TAG, "OTA end failed: %s", esp_err_to_name(err));
-      httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OTA end failed");
-      return ESP_FAIL;
-  }
-
-  err = esp_ota_set_boot_partition(ota_partition);
-  if (err != ESP_OK) {
-      ESP_LOGE(TAG, "Set boot partition failed: %s", esp_err_to_name(err));
-      httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Set boot partition failed");
-      return ESP_FAIL;
-  }
-  
-  cJSON *resp = cJSON_CreateObject();
-  cJSON_AddBoolToObject(resp, "success", true);
-  cJSON_AddStringToObject(resp, "message", "OTA update successful! Rebooting...");
-
-  ESP_LOGI(TAG, "OTA update successful, restarting in 2 seconds...");
-  esp_err_t ret = send_resp_json(resp, req);
-  vTaskDelay(2000 / portTICK_PERIOD_MS);
-  esp_restart();
-
-  return ret;
 }
 
 #ifdef CONFIG_SERVER_HTTPS
@@ -359,7 +264,7 @@ esp_err_t server::start() {
   }
 
   httpd_uri_t led_info_handler = {
-    .uri = "/api/ledinfo",
+    .uri = "/api/led",
     .method = HTTP_GET,
     .handler = api_led_info_handler,
     .user_ctx = wLed
@@ -382,13 +287,7 @@ esp_err_t server::start() {
   };
   httpd_register_uri_handler(m_server, &device_info_handler);
 
-  httpd_uri_t ota_upload = {
-    .uri = "/api/ota/upload",
-    .method = HTTP_POST,
-    .handler = ota_upload_handler,
-    .user_ctx = this
-  };
-  httpd_register_uri_handler(m_server, &ota_upload);
+  m_ota.register_handlers(m_server);
 
   ESP_LOGI(TAG, "Server started successfully");
   return ESP_OK;
