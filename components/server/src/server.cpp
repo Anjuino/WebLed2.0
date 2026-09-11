@@ -14,6 +14,7 @@
 #include "cJSON.h"
 #include "wifimanager.h"
 #include "http_json.h"
+#include "script_engine.h"
 
 #ifdef CONFIG_SERVER_HTTPS
 #include "esp_https_server.h"
@@ -87,7 +88,9 @@ static esp_err_t api_led_control_handler(httpd_req_t *req) {
   }
 
   cJSON *mode = cJSON_GetObjectItem(root, "mode");
-  if(cJSON_IsNumber(mode) && !wLed->is_valid_mode((uint8_t)mode->valueint)) {
+  if(cJSON_IsNumber(mode) && wLed->is_valid_mode((uint8_t)mode->valueint)) {
+    wLed->set_mode(mode->valueint);
+  } else {
     cJSON_Delete(root);
     httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Unknown mode id");
     return ESP_FAIL;
@@ -95,8 +98,6 @@ static esp_err_t api_led_control_handler(httpd_req_t *req) {
 
   cJSON *speed = cJSON_GetObjectItem(root, "speed");
   if(cJSON_IsNumber(speed)) wLed->set_speed(speed->valueint);
-
-  if(cJSON_IsNumber(mode)) wLed->set_mode(mode->valueint);
 
   cJSON *brightness = cJSON_GetObjectItem(root, "brightness");
   if(cJSON_IsNumber(brightness)) wLed->set_brightness(brightness->valueint);
@@ -230,13 +231,14 @@ esp_err_t server::start() {
   ssl_config.cacert_pem = (const uint8_t *)cert_ca_crt_start;
   ssl_config.cacert_len = ca_len;
 
-  ssl_config.httpd.recv_wait_timeout = 15;
-  ssl_config.httpd.send_wait_timeout = 15;
+  ssl_config.httpd.recv_wait_timeout = 10;
+  ssl_config.httpd.send_wait_timeout = 10;
   ssl_config.transport_mode = HTTPD_SSL_TRANSPORT_SECURE;
   ssl_config.tls_handshake_timeout_ms = 5000;
   ssl_config.session_tickets = true;
   ssl_config.httpd.task_priority = 10;
-  ssl_config.httpd.max_open_sockets = 2;
+  ssl_config.httpd.max_open_sockets = 6;
+  ssl_config.httpd.stack_size = 15 * 1024;
   
   esp_err_t err = httpd_ssl_start(&m_server, &ssl_config);
 #else
@@ -288,6 +290,7 @@ esp_err_t server::start() {
   httpd_register_uri_handler(m_server, &device_info_handler);
 
   m_ota.register_handlers(m_server);
+  script_engine_register_handlers(m_server);
 
   ESP_LOGI(TAG, "Server started successfully");
   return ESP_OK;

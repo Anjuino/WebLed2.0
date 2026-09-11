@@ -1,7 +1,7 @@
 idf_component_register(
     SRCS "src/server.cpp" "src/ota.cpp" "src/http_json.cpp"
     INCLUDE_DIRS "include"
-    REQUIRES esp_http_server esp_https_server esp_http_client mbedtls esp_netif cjson wifi_manager device_manager led app_update esp_https_ota efuse
+    REQUIRES esp_http_server esp_https_server esp_http_client mbedtls esp_netif cjson wifi_manager device_manager led app_update esp_https_ota efuse scripting
 )
 
 if(CONFIG_SERVER_HTTPS)
@@ -11,3 +11,5 @@ if(CONFIG_SERVER_HTTPS)
 else()
 
 endif()
+
+target_add_binary_data(${COMPONENT_LIB} "cert/remote_ca.crt" EMBED_TXTFILES)

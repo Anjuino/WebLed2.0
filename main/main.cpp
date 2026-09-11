@@ -10,6 +10,7 @@
 #include "mdns.h"
 #include "wifimanager.h"
 #include "server.h"
+#include "script_engine.h"
 
 
 class led *wLed = nullptr;
@@ -89,7 +90,7 @@ extern "C" void app_main ()
   vTaskDelay(pdMS_TO_TICKS(100));
   wifi = new wifimanager();
   //wifi->set_ap("WledTest", "87654321", true);
-  //wifi->set_sta("TP-Link_467D", "66484608", true);
+  wifi->set_sta("TP-Link_467D", "66484608", false);
   wifi->init();
 
   uint64_t timer = (esp_timer_get_time() / 1000) + 5000;
@@ -107,6 +108,37 @@ extern "C" void app_main ()
   vTaskDelay(pdMS_TO_TICKS(100));
 
   wLed = new led();
+  script_engine_start(wLed);
+
+  static const char *demo_src =
+    "hue;\n"
+    "function step() {\n"
+    "    r; g; b; h;\n"
+    "    if (hue < 85) { r = 255 - hue * 3; g = hue * 3; b = 0; }\n"
+    "    else if (hue < 170) { h = hue - 85; r = 0; g = 255 - h * 3; b = h * 3; }\n"
+    "    else { h = hue - 170; r = h * 3; g = 0; b = 255 - h * 3; }\n"
+    "    led::setPixel(0, r, g, b);\n"
+    "    led::show();\n"
+    "    hue = hue + 1;\n"
+    "    if (hue >= 255) hue = 0;\n"
+    "    led::delay(20);\n"
+    "}\n";
+  script_engine_compile_and_register("WrenchDemo", 3, true, demo_src);
+
+  static const char *sin_src =
+    "t;\n"
+    "function step() {\n"
+    "    r; g; b;\n"
+    "    r = (int)(127.5 + 127.5 * sin(t * 0.05));\n"
+    "    g = (int)(127.5 + 127.5 * cos(t * 0.04));\n"
+    "    b = (int)(127.5 + 127.5 * sin(t * 0.03 + 1.5));\n"
+    "    led::setPixel(0, r, g, b);\n"
+    "    led::show();\n"
+    "    t = t + 1;\n"
+    "    led::delay(20);\n"
+    "}\n";
+  script_engine_compile_and_register("WrenchSin", 4, true, sin_src);
+
   serv = new server(wLed);
 
   esp_err_t ret = serv->start();
@@ -116,7 +148,7 @@ extern "C" void app_main ()
   }
   vTaskDelay(pdMS_TO_TICKS(100));
 
-  xTaskCreatePinnedToCore(led::task_entry, "Led", 4 * 1024, wLed, 14, NULL, 1);
+  xTaskCreatePinnedToCore(led::task_entry, "Led", 8 * 1024, wLed, 14, NULL, 1);
   vTaskDelay(pdMS_TO_TICKS(100));
   xTaskCreate(memory_task, "WatchDevice", 4 * 1024, NULL, 2, NULL);
   vTaskDelete(NULL);
