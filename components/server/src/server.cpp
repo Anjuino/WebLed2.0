@@ -510,6 +510,7 @@ esp_err_t server::start() {
   httpd_register_uri_handler(m_server, &file_delete);
 
   m_ota.register_handlers(m_server);
+  script_engine_register_handlers(m_server);
 
   ESP_LOGI(TAG, "Server started successfully");
   return ESP_OK;
