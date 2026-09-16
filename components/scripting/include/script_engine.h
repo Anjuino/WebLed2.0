@@ -4,7 +4,6 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "led.h"
-#include "esp_http_server.h"
 #include "filesystem.h"
 
 // Запускает движок скриптов: инициализирует Wrench VM, регистрирует биндинги

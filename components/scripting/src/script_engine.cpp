@@ -313,36 +313,3 @@ bool script_engine_compile_and_register(const char *name, uint8_t id, bool conti
 {
     return submit_compile_job(name, id, continuous, source, source_len, error, error_len);
 }
-
-// ---------------------------------------------------------------------
-// HTTP: POST /api/led/scripts?id=N&name=...&continuous=true, тело — исходник
-// ---------------------------------------------------------------------
-
-static esp_err_t send_json(httpd_req_t *req, int status, cJSON *resp)
-{
-    httpd_resp_set_status(req, status == 200 ? HTTPD_200 :
-                                status == 400 ? HTTPD_400 :
-                                status == 409 ? "409 Conflict" : HTTPD_500);
-    httpd_resp_set_type(req, "application/json");
-    char *json = cJSON_Print(resp);
-    esp_err_t err = json ? httpd_resp_sendstr(req, json) : ESP_FAIL;
-    if (json) free(json);
-    cJSON_Delete(resp);
-    return err;
-}
-
-static bool get_query_param(httpd_req_t *req, const char *key, char *out, size_t out_len)
-{
-    size_t qlen = httpd_req_get_url_query_len(req);
-    if (qlen == 0) return false;
-
-    char *query = (char *)malloc(qlen + 1);
-    if (!query) return false;
-
-    bool found = false;
-    if (httpd_req_get_url_query_str(req, query, qlen + 1) == ESP_OK) {
-        found = httpd_query_key_value(query, key, out, out_len) == ESP_OK;
-    }
-    free(query);
-    return found;
-}
