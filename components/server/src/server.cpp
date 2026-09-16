@@ -14,6 +14,7 @@
 #include "cJSON.h"
 #include "wifimanager.h"
 #include "http_json.h"
+#include "script_engine.h"
 
 #ifdef CONFIG_SERVER_HTTPS
 #include "esp_https_server.h"
@@ -56,7 +57,7 @@ static esp_err_t api_led_info_handler(httpd_req_t *req) {
         cJSON *m = cJSON_CreateObject();
         if (m) {
           cJSON_AddNumberToObject(m, "id_mode", fx.id);
-          cJSON_AddStringToObject(m, "name", fx.name);
+          cJSON_AddStringToObject(m, "name", fx.name.c_str());
           cJSON_AddItemToArray(modes, m);
         }
       }
@@ -69,50 +70,112 @@ static esp_err_t api_led_info_handler(httpd_req_t *req) {
   return send_resp_json(root, req);
 }
 
+bool getjson(httpd_req_t *req, char **output) {
+  size_t content_len = req->content_len;
+  if(content_len == 0) {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Empty body");
+    return ESP_FAIL;
+  }
+  if(content_len >= 4096) {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Body too large");
+    return ESP_FAIL;
+  }
+
+  char *buf = (char*) malloc(content_len + 1);
+  if(!buf) {
+    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OOM");
+    return ESP_FAIL;
+  }
+
+  size_t received = 0;
+  while(received < content_len) {
+    int ret = httpd_req_recv(req, buf + received, content_len - received);
+    if(ret <= 0) {
+      if(ret == HTTPD_SOCK_ERR_TIMEOUT) {
+        continue;
+      }
+      free(buf);
+      httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Recv failed");
+      return ESP_FAIL;
+    }
+    received += ret;
+  }
+  buf[received] = '\0';
+
+  *output = buf;
+  return ESP_OK;
+}
+
 static esp_err_t api_led_control_handler(httpd_req_t *req) {
   ESP_LOGI(TAG, "Запрос пришел");
   led *wLed = (led*)req->user_ctx;
 
-  char buf[256] = {0};
-  int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
-  if(ret <= 0) {
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Empty body");
-    return ESP_FAIL;
-  }
+  char *buf = nullptr;
+  if(getjson(req, &buf) == ESP_OK) {
 
-  cJSON *root = cJSON_Parse(buf);
-  if(!root) {
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
-    return ESP_FAIL;
-  }
-
-  cJSON *mode = cJSON_GetObjectItem(root, "mode");
-  if(cJSON_IsNumber(mode) && !wLed->is_valid_mode((uint8_t)mode->valueint)) {
-    cJSON_Delete(root);
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Unknown mode id");
-    return ESP_FAIL;
-  }
-
-  cJSON *speed = cJSON_GetObjectItem(root, "speed");
-  if(cJSON_IsNumber(speed)) wLed->set_speed(speed->valueint);
-
-  if(cJSON_IsNumber(mode)) wLed->set_mode(mode->valueint);
-
-  cJSON *brightness = cJSON_GetObjectItem(root, "brightness");
-  if(cJSON_IsNumber(brightness)) wLed->set_brightness(brightness->valueint);
-
-  cJSON *color = cJSON_GetObjectItem(root, "color");
-  if(cJSON_IsObject(color)) {
-    cJSON *r = cJSON_GetObjectItem(color, "r");
-    cJSON *g = cJSON_GetObjectItem(color, "g");
-    cJSON *b = cJSON_GetObjectItem(color, "b");
-    if(cJSON_IsNumber(r) && cJSON_IsNumber(g) && cJSON_IsNumber(b)) {
-      wLed->set_color(r->valueint, g->valueint, b->valueint);
+    cJSON *root = cJSON_Parse(buf);
+    free(buf);
+    if(!root) {
+      httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+      return ESP_FAIL;
     }
+
+    cJSON *state = cJSON_GetObjectItem(root, "state");
+
+    if(state) {
+      cJSON *mode = cJSON_GetObjectItem(state, "mode");
+      if(cJSON_IsNumber(mode) && wLed->is_valid_mode((uint8_t)mode->valueint)) {
+        wLed->set_mode(mode->valueint);
+      } else {
+        cJSON_Delete(root);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Unknown mode id");
+        return ESP_FAIL;
+      }
+
+      cJSON *speed = cJSON_GetObjectItem(state, "speed");
+      if(cJSON_IsNumber(speed)) wLed->set_speed(speed->valueint);
+
+      cJSON *brightness = cJSON_GetObjectItem(state, "brightness");
+      if(cJSON_IsNumber(brightness)) wLed->set_brightness(brightness->valueint);
+
+      cJSON *color = cJSON_GetObjectItem(state, "color");
+      if(cJSON_IsObject(color)) {
+        cJSON *r = cJSON_GetObjectItem(color, "r");
+        cJSON *g = cJSON_GetObjectItem(color, "g");
+        cJSON *b = cJSON_GetObjectItem(color, "b");
+        if(cJSON_IsNumber(r) && cJSON_IsNumber(g) && cJSON_IsNumber(b)) {
+          wLed->set_color(r->valueint, g->valueint, b->valueint);
+        }
+      }
+    }
+
+    cJSON *leds_arr = cJSON_GetObjectItem(root, "leds_arr");
+    if(cJSON_IsArray(leds_arr)) {
+      wLed->set_mode(255);
+      cJSON *item = NULL;
+      cJSON_ArrayForEach(item, leds_arr) {
+        cJSON *id = cJSON_GetObjectItem(item, "id");
+        if(!cJSON_IsNumber(id)) continue;
+
+        cJSON *item_color = cJSON_GetObjectItem(item, "color");
+        if(!cJSON_IsObject(item_color)) continue;
+
+        cJSON *r = cJSON_GetObjectItem(item_color, "r");
+        cJSON *g = cJSON_GetObjectItem(item_color, "g");
+        cJSON *b = cJSON_GetObjectItem(item_color, "b");
+        if(!cJSON_IsNumber(r) || !cJSON_IsNumber(g) || !cJSON_IsNumber(b)) continue;
+
+        ESP_LOGI(TAG, "led id=%d color=(%d,%d,%d)", id->valueint, r->valueint, g->valueint, b->valueint);
+        wLed->set_pixel(id->valueint, r->valueint, g->valueint, b->valueint);
+      }
+      wLed->show();
+    }
+
+    cJSON_Delete(root);
+    return send_json_status(req, "status", true, nullptr, nullptr);
   }
 
-  cJSON_Delete(root);
-  return send_json_status(req, "success", true, nullptr, nullptr);
+  return send_json_status(req, "status", false, "error", "fail parse json");
 }
 
 static esp_err_t api_device_info_handler(httpd_req_t *req) {
@@ -132,6 +195,9 @@ static esp_err_t api_device_info_handler(httpd_req_t *req) {
   cJSON_AddNumberToObject(_memory, "iram_total", memory.total);
   cJSON_AddNumberToObject(_memory, "iram_free", memory.free);
   cJSON_AddNumberToObject(_memory, "iram_min_free", memory.min_free);
+  cJSON_AddNumberToObject(_memory, "psram_total", memory.psram_total);
+  cJSON_AddNumberToObject(_memory, "psram_free", memory.psram_free);
+  cJSON_AddNumberToObject(_memory, "psram_min_free", memory.psram_min_free);
   cJSON_AddItemToObject(root, "memory_info", _memory);
 
   cJSON *wifi_array = cJSON_CreateArray();
@@ -168,6 +234,136 @@ static esp_err_t api_device_info_handler(httpd_req_t *req) {
   return send_resp_json(root, req);
 }
 
+static esp_err_t f_file_get(httpd_req_t *req) {
+  ESP_LOGI(TAG, "Запрос пришел get");
+  FileSystem *fs = (FileSystem*)req->user_ctx;
+
+  char query[128];
+  esp_err_t err = httpd_req_get_url_query_str(req, query, sizeof(query));
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "No query string: %s", esp_err_to_name(err));
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing query");
+    return ESP_FAIL;
+  }
+
+  ESP_LOGI(TAG, "Query: %s", query);
+
+  char value[256];
+
+  // ?name=test
+  if (httpd_query_key_value(query, "name", value, sizeof(value)) == ESP_OK) {
+    std::string text = fs->getfile(value);
+    if (text.empty()) {
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
+        return ESP_FAIL;
+    }
+
+    cJSON *root = cJSON_Parse(text.c_str());
+    if (!root) {
+        ESP_LOGE(TAG, "Файл %s содержит невалидный JSON", value);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Invalid JSON in file");
+        return ESP_FAIL;
+    }
+
+    return send_resp_json(root, req);
+  }
+
+  // ?info
+  if (httpd_query_key_value(query, "info", value, sizeof(value)) == ESP_OK) {
+    std::vector<fileinfo_t> list = fs->getfilelist();
+
+    cJSON *root = cJSON_CreateObject();
+    if (!root) {
+      httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OOM");
+      return ESP_FAIL;
+    }
+
+    cJSON *file_array = cJSON_CreateArray();
+    uint8_t count = 0;
+    for (auto item : list) {
+      cJSON *file_obj = cJSON_CreateObject();
+      cJSON_AddStringToObject(file_obj, "name", item.name.c_str());
+      cJSON_AddNumberToObject(file_obj, "size", item.size);
+      cJSON_AddItemToArray(file_array, file_obj);
+      count++;
+    }
+
+    cJSON *info_fs = cJSON_CreateObject();
+    if(!info_fs) {
+      cJSON_Delete(root);
+      return send_resp_json(NULL, req);
+    }
+  
+    cJSON_AddNumberToObject(info_fs, "file_total", count);
+    auto [total, used] = fs->get_info();
+    cJSON_AddNumberToObject(info_fs, "size_total", total);
+    cJSON_AddNumberToObject(info_fs, "size_used", used);
+    cJSON_AddItemToObject(root, "info", info_fs);
+    cJSON_AddItemToObject(root, "files", file_array);
+    return send_resp_json(root, req);
+  }
+
+  httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Query param is missing");
+  return ESP_FAIL;
+}
+
+static esp_err_t f_file_create(httpd_req_t *req) {
+  ESP_LOGI(TAG, "Запрос пришел create file");
+  FileSystem *fs = (FileSystem*)req->user_ctx;
+
+  char *buf = nullptr;
+  if(getjson(req, &buf) == ESP_OK) {
+    cJSON *root = cJSON_Parse(buf);
+    if(!root) {
+      free(buf);
+      httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+      return ESP_FAIL;
+    }
+
+    cJSON *name = cJSON_GetObjectItem(root, "name");
+    cJSON *text = cJSON_GetObjectItem(root, "text");
+    cJSON *id = cJSON_GetObjectItem(root, "id");
+    cJSON *continius = cJSON_GetObjectItem(root, "continius");
+
+    if(cJSON_IsString(name) && cJSON_IsString(text) && cJSON_IsNumber(id) && cJSON_IsBool(continius)) {
+      fs->createfile(name->valuestring, buf);
+      script_engine_compile_and_register(name->valuestring, id->valueint, continius->valueint, text->valuestring);
+    }
+    free(buf);
+    return send_json_status(req, "status", true, nullptr, nullptr);
+  }
+  return send_json_status(req, "status", false, "error", "fail parse json");
+}
+
+static esp_err_t f_file_delete(httpd_req_t *req) {
+  ESP_LOGI(TAG, "Запрос пришел delete file");
+  FileSystem *fs = (FileSystem*)req->user_ctx;
+
+  char query[128];
+  esp_err_t err = httpd_req_get_url_query_str(req, query, sizeof(query));
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "No query string: %s", esp_err_to_name(err));
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing query");
+    return ESP_FAIL;
+  }
+
+  ESP_LOGI(TAG, "Query: %s", query);
+
+  char value[256];
+
+  // ?name=test
+  if (httpd_query_key_value(query, "name", value, sizeof(value)) == ESP_OK) {
+    if(fs->exsistfile(value)) {
+      fs->deletefile(value);
+      return send_json_status(req, "status", true, nullptr, nullptr);
+    } else {
+      return send_json_status(req, "status", false, "error", "file not found");
+    }
+  }
+  httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Query param is missing");
+  return ESP_FAIL;
+}
+
 #ifdef CONFIG_SERVER_HTTPS
 void server::checkCertificate() {
   int ret;
@@ -196,8 +392,9 @@ void server::checkCertificate() {
 }
 #endif
 
-server::server(class led *_led) {
+server::server(class led *_led, class FileSystem *_fs) {
   if(_led) wLed = _led;
+  if(_fs) fs = _fs;
 }
 
 server::~server() {
@@ -230,13 +427,14 @@ esp_err_t server::start() {
   ssl_config.cacert_pem = (const uint8_t *)cert_ca_crt_start;
   ssl_config.cacert_len = ca_len;
 
-  ssl_config.httpd.recv_wait_timeout = 15;
-  ssl_config.httpd.send_wait_timeout = 15;
+  ssl_config.httpd.recv_wait_timeout = 10;
+  ssl_config.httpd.send_wait_timeout = 10;
   ssl_config.transport_mode = HTTPD_SSL_TRANSPORT_SECURE;
   ssl_config.tls_handshake_timeout_ms = 5000;
   ssl_config.session_tickets = true;
   ssl_config.httpd.task_priority = 10;
-  ssl_config.httpd.max_open_sockets = 2;
+  ssl_config.httpd.max_open_sockets = 6;
+  ssl_config.httpd.stack_size = 15 * 1024;
   
   esp_err_t err = httpd_ssl_start(&m_server, &ssl_config);
 #else
@@ -286,6 +484,30 @@ esp_err_t server::start() {
     .user_ctx = nullptr
   };
   httpd_register_uri_handler(m_server, &device_info_handler);
+
+  httpd_uri_t file_get = {
+    .uri = "/api/file",
+    .method = HTTP_GET,
+    .handler = f_file_get,
+    .user_ctx = fs
+  };
+  httpd_register_uri_handler(m_server, &file_get);
+
+  httpd_uri_t file_post = {
+    .uri = "/api/file",
+    .method = HTTP_POST,
+    .handler = f_file_create,
+    .user_ctx = fs
+  };
+  httpd_register_uri_handler(m_server, &file_post);
+
+  httpd_uri_t file_delete = {
+    .uri = "/api/file",
+    .method = HTTP_DELETE,
+    .handler = f_file_delete,
+    .user_ctx = fs
+  };
+  httpd_register_uri_handler(m_server, &file_delete);
 
   m_ota.register_handlers(m_server);
 

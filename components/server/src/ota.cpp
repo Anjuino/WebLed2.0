@@ -7,9 +7,10 @@
 #include "cJSON.h"
 #include <string.h>
 #include <stdlib.h>
+#include "private.h"
 
-#define OTA_REMOTE_URL "http://192.168.0.113:5000/getfirmware"
-#define OTA_ACK_URL    "http://192.168.0.113:5000/ack"
+#define OTA_REMOTE_URL "https://192.168.0.113:5000/getfirmware"
+#define OTA_ACK_URL    "https://192.168.0.113:5000/ack"
 
 #define FIRMWARE_VERSION 1
 
@@ -108,6 +109,8 @@ static void ota_post_json_log(const char *url, const char *body, const char *wha
   cfg.url = url;
   cfg.method = HTTP_METHOD_POST;
   cfg.timeout_ms = 2000;
+  cfg.cert_pem = cert_remote_ca_crt_start;
+  cfg.skip_cert_common_name_check = true; // адрес сервера прошивок ещё не зафиксирован — проверяем только CA
 
   esp_http_client_handle_t client = esp_http_client_init(&cfg);
   if (!client) {
@@ -171,6 +174,8 @@ esp_err_t OtaManager::fetch_from_url(const char *url) {
   cfg.timeout_ms = 30000;
   cfg.buffer_size = 4096;
   cfg.buffer_size_tx = 4096;
+  cfg.cert_pem = cert_remote_ca_crt_start;
+  cfg.skip_cert_common_name_check = true; // адрес сервера прошивок ещё не зафиксирован — проверяем только CA
 
   esp_http_client_handle_t client = esp_http_client_init(&cfg);
   if (!client) {

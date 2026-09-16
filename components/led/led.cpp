@@ -164,6 +164,25 @@ void led::off(void)
   led_strip_clear(led_strip);
 }
 
+void led::update_field(uint8_t &field, uint8_t new_value, const char *log_name, const char *key, bool &need_commit)
+{
+  if (field == new_value) {
+    ESP_LOGW(TAG, "%s тот же: %d", log_name, field);
+    return;
+  }
+
+  ESP_LOGI(TAG, "Установка %s: %d", log_name, new_value);
+  field = new_value;
+
+  if (!save_mode) return;
+
+  if (settings.set(key, new_value)) {
+    need_commit = true;
+  } else {
+    ESP_LOGE(TAG, "Ошибка сохранения %s", log_name);
+  }
+}
+
 void led::set_state(uint8_t _r, uint8_t _g, uint8_t _b, uint8_t _mode, uint8_t _speed, uint8_t _brightness)
 {
   if (xSemaphoreTake(mutex, pdMS_TO_TICKS(3000)) != pdTRUE) {
@@ -172,107 +191,24 @@ void led::set_state(uint8_t _r, uint8_t _g, uint8_t _b, uint8_t _mode, uint8_t _
   }
 
   bool need_commit = false;
+  update_field(r, _r, "Красный канал", KEY_LED_COLOR_R, need_commit);
+  update_field(g, _g, "Зеленый канал", KEY_LED_COLOR_G, need_commit);
+  update_field(b, _b, "Синий канал", KEY_LED_COLOR_B, need_commit);
+  update_field(mode, _mode, "Режим", KEY_LED_MODE, need_commit);
 
-  if(this->r != _r) {
-    ESP_LOGI(TAG, "Красный канал:%d", _r);
-    this->r = _r;
-    if(save_mode) {
-      if(settings.set(KEY_LED_COLOR_R, _r)) {
-        need_commit = true;
-      }
-      else {
-        ESP_LOGE(TAG, "Ошибка сохранения канала r");
-      }
-    }
-  } else {
-    ESP_LOGW(TAG, "Красный канал тот же:%d", this->r);
-  }
-
-  if(this->g != _g) {
-    ESP_LOGI(TAG, "Зеленый канал:%d", _g);
-    this->g = _g;
-    if(save_mode) {
-      if(settings.set(KEY_LED_COLOR_G, _g)) {
-        need_commit = true;
-      }
-      else {
-        ESP_LOGE(TAG, "Ошибка сохранения канала g");
-      }
-    }
-  } else {
-    ESP_LOGW(TAG, "Зеленый канал тот же:%d", this->g);
-  }
-
-  if(this->b != _b) {
-    ESP_LOGI(TAG, "Синий канал:%d", _b);
-    this->b= _b;
-    if(save_mode) {
-      if(settings.set(KEY_LED_COLOR_B, _b)) {
-        need_commit = true;
-      }
-      else {
-        ESP_LOGE(TAG, "Ошибка сохранения канала b");
-      }
-    }
-  } else {
-    ESP_LOGW(TAG, "Синий канал тот же:%d", this->b);
-  }
-
-  if(this->mode != _mode) {
-    ESP_LOGI(TAG, "Установка режима %d", _mode);
-    this->mode = _mode;
-    if(save_mode) {
-      if(settings.set(KEY_LED_MODE, _mode)) {
-        need_commit = true;
-      }
-      else {
-        ESP_LOGE(TAG, "Ошибка сохранения режима");
-      }
-    }
-  } else {
-    ESP_LOGW(TAG, "Режим тот же %d", this->mode);
-  }
-
-  if(_speed <= 100) {
-    if(this->speed != _speed) {
-      ESP_LOGI(TAG, "Установка скорости %d", _speed);
-      this->speed = _speed;
-      if(save_mode) {
-        if(settings.set(KEY_LED_SPEED, _speed)) {
-          need_commit = true;
-        }
-        else {
-          ESP_LOGE(TAG, "Ошибка сохранения скорости");
-        }
-      }
-    } else {
-      ESP_LOGW(TAG, "Скорость та же %d", this->speed);
-    }
+  if (_speed <= 100) {
+    update_field(speed, _speed, "Скорость", KEY_LED_SPEED, need_commit);
   } else {
     ESP_LOGE(TAG, "Скорость может быть от 0 до 100, передано как %d", _speed);
   }
 
-  if(_brightness <= 100) {
-    if(this->brightness != _brightness) {
-      ESP_LOGI(TAG, "Установка яркости %d", _brightness);
-      this->brightness = _brightness;
-
-      if(save_mode) {
-        if(settings.set(KEY_LED_BRIGHTNESS, _brightness)) {
-          need_commit = true;
-        }
-        else {
-          ESP_LOGE(TAG, "Ошибка сохранения яркости");
-        }
-      }
-    } else {
-      ESP_LOGW(TAG, "Яркость та же %d",this->brightness);
-    }
+  if (_brightness <= 100) {
+    update_field(brightness, _brightness, "Яркость", KEY_LED_BRIGHTNESS, need_commit);
   } else {
     ESP_LOGE(TAG, "Яркость может быть от 0 до 100, передано как %d", _brightness);
   }
 
-  if(need_commit) {
+  if (need_commit) {
     ESP_LOGI(TAG, "Сохранение нового состояния");
     settings.commit();
   }

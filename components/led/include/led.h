@@ -27,7 +27,7 @@ class led;
 
 struct LedEffect {
   uint8_t id;                                  // Порядковый номер режима
-  const char *name;                            // Имя режима
+  std::string name;                            // Имя режима
   bool continuous;                             // true - для анимаций, false - разовое включение
   void (*apply)(led *self, void *user_data);   // Функция для исполнения — обычная свободная
                                                // функция с led* явным параметром, а не метод
@@ -59,6 +59,8 @@ class led {
       virtual void task();
 
       const LedEffect *find_effect(uint8_t id) const;
+
+      void update_field(uint8_t &field, uint8_t new_value, const char *log_name, const char *key, bool &need_commit);
 
   public:
 

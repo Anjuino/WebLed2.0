@@ -18,10 +18,17 @@ void memory_task(void *pvParameters)
         size_t internal_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
         size_t internal_min_free = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
         size_t internal_total = heap_caps_get_total_size(MALLOC_CAP_INTERNAL);
+        size_t psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+        size_t psram_min_free = heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM);
+        size_t psram_total = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
         ESP_LOGI(TAG, "=== Memory ===");
         ESP_LOGI(TAG, "Free: %zu bytes",     internal_free);
         ESP_LOGI(TAG, "Min free: %zu bytes", internal_min_free);
         ESP_LOGI(TAG, "Total: %zu bytes",    internal_total);
+        ESP_LOGI(TAG, "=== PSRAM ===");
+        ESP_LOGI(TAG, "Free: %zu bytes",     psram_free);
+        ESP_LOGI(TAG, "Min free: %zu bytes", psram_min_free);
+        ESP_LOGI(TAG, "Total: %zu bytes",    psram_total);
 
         float temp_cpu;
         ESP_ERROR_CHECK(temperature_sensor_get_celsius(temp_handle, &temp_cpu));
@@ -36,6 +43,10 @@ memory_info getstatus(void) {
     mem.free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
     mem.total = heap_caps_get_total_size(MALLOC_CAP_INTERNAL);
     mem.min_free = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
+
+    mem.psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    mem.psram_total = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+    mem.psram_min_free = heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM);
 
     float temp_cpu;
     ESP_ERROR_CHECK(temperature_sensor_get_celsius(temp_handle, &temp_cpu));

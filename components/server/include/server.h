@@ -6,6 +6,7 @@
 #include "esp_http_server.h"
 #include "led.h"
 #include "ota.h"
+#include "filesystem.h"
 
 class server {
   private:
@@ -13,13 +14,14 @@ class server {
     class led *wLed = nullptr;
     httpd_handle_t m_server = nullptr;
     OtaManager m_ota;
+    class FileSystem *fs = nullptr;
 
     #ifdef CONFIG_SERVER_HTTPS
       void checkCertificate();
     #endif
 
   public:
-    server(class led *_led);
+    server(class led *_led, class FileSystem *_fs);
     ~server();
 
     esp_err_t start();

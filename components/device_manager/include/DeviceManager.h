@@ -10,6 +10,9 @@ struct memory_info {
     size_t total;
     size_t free;
     size_t min_free;
+    size_t psram_total;
+    size_t psram_free;
+    size_t psram_min_free;
     float temperature;
 };
 
