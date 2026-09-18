@@ -95,18 +95,16 @@ bool led::init()
 
 bool led::update_led_count(uint16_t new_led_count)
 {
+  off();
   if (xSemaphoreTake(mutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
     ESP_LOGE(TAG, "Не удалось захватить мьютекс");
     return false;
   }
 
   ESP_LOGI(TAG, "Обновление количества светодоидов, текущее %u", led_count);
-  off();
-  vTaskDelay(pdMS_TO_TICKS(100));
-
+  //mode = 255;
   led_strip_del(led_strip);
   led_strip = nullptr;
-  vTaskDelay(pdMS_TO_TICKS(500));
 
   if (!settings.set(KEY_LED_COUNT, new_led_count, true)) {
     ESP_LOGE(TAG, "Ошибка сохранения количества светодиодов");
@@ -221,11 +219,13 @@ void led::set_state(uint8_t _r, uint8_t _g, uint8_t _b, uint8_t _mode, uint8_t _
   }
 }
 
-void led::set_save_mode(bool new_save_mode)
+void led::set_save_mode(bool new_save_mode, bool persist)
 {
   if(this->save_mode != new_save_mode) {
-    ESP_LOGI(TAG, "Режим сохранения: %s", save_mode ? "ON" : "OFF");
+    ESP_LOGI(TAG, "Режим сохранения: %s", new_save_mode ? "ON" : "OFF");
     save_mode = new_save_mode;
-    settings.set(KEY_LED_SAVE_MODE, (uint8_t)new_save_mode, true);
+    if(persist) {
+      settings.set(KEY_LED_SAVE_MODE, (uint8_t)new_save_mode, true);
+    }
   }
 }

@@ -7,6 +7,7 @@
 #include "led.h"
 #include "ota.h"
 #include "filesystem.h"
+#include "wifimanager.h"
 
 class server {
   private:
@@ -15,13 +16,14 @@ class server {
     httpd_handle_t m_server = nullptr;
     OtaManager m_ota;
     class FileSystem *fs = nullptr;
+    class wifimanager *wifi = nullptr;
 
     #ifdef CONFIG_SERVER_HTTPS
       void checkCertificate();
     #endif
 
   public:
-    server(class led *_led, class FileSystem *_fs);
+    server(class led *_led, class FileSystem *_fs, class wifimanager *_wifi);
     ~server();
 
     esp_err_t start();

@@ -12,8 +12,7 @@
 #include <tuple>
 #include "DeviceManager.h"
 #include "cJSON.h"
-#include "wifimanager.h"
-#include "http_json.h"
+#include "helper_server.h"
 #include "script_engine.h"
 
 #ifdef CONFIG_SERVER_HTTPS
@@ -29,22 +28,36 @@ static esp_err_t api_led_info_handler(httpd_req_t *req) {
   led *wLed = (led*)req->user_ctx;
   cJSON *root = cJSON_CreateObject();
   if(root) {
-    cJSON_AddNumberToObject(root, "speed", wLed->get_speed());
-    cJSON_AddNumberToObject(root, "mode", wLed->get_mode());
-    cJSON_AddNumberToObject(root, "brightness", wLed->get_brightness());
-
-    auto [r, g, b] = wLed->get_color();
-    cJSON *color = cJSON_CreateObject();
-    if(color) {
-      cJSON_AddNumberToObject(color, "r", r);
-      cJSON_AddNumberToObject(color, "g", g);
-      cJSON_AddNumberToObject(color, "b", b);
-      cJSON_AddItemToObject(root, "color", color);
+    cJSON *settings = cJSON_CreateObject();
+    if(settings) {
+      cJSON_AddNumberToObject(settings, "led_count", wLed->get_count_led());
+      cJSON_AddBoolToObject(settings, "save_mode", wLed->get_save_mode()); 
+      cJSON_AddItemToObject(root, "settings", settings);
     } else {
       cJSON_Delete(root);
       return send_resp_json(NULL, req);
     }
 
+    cJSON *state = cJSON_CreateObject();
+    if(state) {
+      cJSON_AddNumberToObject(state, "speed", wLed->get_speed());
+      cJSON_AddNumberToObject(state, "mode", wLed->get_mode());
+      cJSON_AddNumberToObject(state, "brightness", wLed->get_brightness());
+
+      auto [r, g, b] = wLed->get_color();
+      cJSON *color = cJSON_CreateObject();
+      if(color) {
+        cJSON_AddNumberToObject(color, "r", r);
+        cJSON_AddNumberToObject(color, "g", g);
+        cJSON_AddNumberToObject(color, "b", b);
+        cJSON_AddItemToObject(state, "color", color);
+      } else {
+        cJSON_Delete(root);
+        return send_resp_json(NULL, req);
+      }
+
+      cJSON_AddItemToObject(root, "state", state);
+    }
     cJSON *modes = cJSON_CreateArray();
     if(modes) {
       size_t effects_count = 0;
@@ -70,42 +83,6 @@ static esp_err_t api_led_info_handler(httpd_req_t *req) {
   return send_resp_json(root, req);
 }
 
-bool getjson(httpd_req_t *req, char **output) {
-  size_t content_len = req->content_len;
-  if(content_len == 0) {
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Empty body");
-    return ESP_FAIL;
-  }
-  if(content_len >= 4096) {
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Body too large");
-    return ESP_FAIL;
-  }
-
-  char *buf = (char*) malloc(content_len + 1);
-  if(!buf) {
-    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OOM");
-    return ESP_FAIL;
-  }
-
-  size_t received = 0;
-  while(received < content_len) {
-    int ret = httpd_req_recv(req, buf + received, content_len - received);
-    if(ret <= 0) {
-      if(ret == HTTPD_SOCK_ERR_TIMEOUT) {
-        continue;
-      }
-      free(buf);
-      httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Recv failed");
-      return ESP_FAIL;
-    }
-    received += ret;
-  }
-  buf[received] = '\0';
-
-  *output = buf;
-  return ESP_OK;
-}
-
 static esp_err_t api_led_control_handler(httpd_req_t *req) {
   ESP_LOGI(TAG, "Запрос пришел");
   led *wLed = (led*)req->user_ctx;
@@ -120,24 +97,30 @@ static esp_err_t api_led_control_handler(httpd_req_t *req) {
       return ESP_FAIL;
     }
 
-    cJSON *state = cJSON_GetObjectItem(root, "state");
+    cJSON *settings = cJSON_GetObjectItem(root, "settings");
+    if(settings) {
+      cJSON *led_count = cJSON_GetObjectItem(settings, "led_count");
+      if(cJSON_IsNumber(led_count)) wLed->update_led_count(led_count->valueint);
 
+      cJSON *save_mode = cJSON_GetObjectItem(settings, "save_mode");
+      if(cJSON_IsBool(save_mode)) wLed->set_save_mode(save_mode->valueint);
+    }
+
+    cJSON *state = cJSON_GetObjectItem(root, "state");
     if(state) {
       cJSON *mode = cJSON_GetObjectItem(state, "mode");
       if(cJSON_IsNumber(mode) && wLed->is_valid_mode((uint8_t)mode->valueint)) {
         wLed->set_mode(mode->valueint);
-      } else {
-        cJSON_Delete(root);
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Unknown mode id");
-        return ESP_FAIL;
       }
 
       cJSON *speed = cJSON_GetObjectItem(state, "speed");
-      if(cJSON_IsNumber(speed)) wLed->set_speed(speed->valueint);
-
+      if(cJSON_IsNumber(speed)) {
+        wLed->set_speed(speed->valueint);
+      }
       cJSON *brightness = cJSON_GetObjectItem(state, "brightness");
-      if(cJSON_IsNumber(brightness)) wLed->set_brightness(brightness->valueint);
-
+      if(cJSON_IsNumber(brightness)) {
+        wLed->set_brightness(brightness->valueint);
+      }
       cJSON *color = cJSON_GetObjectItem(state, "color");
       if(cJSON_IsObject(color)) {
         cJSON *r = cJSON_GetObjectItem(color, "r");
@@ -151,7 +134,7 @@ static esp_err_t api_led_control_handler(httpd_req_t *req) {
 
     cJSON *leds_arr = cJSON_GetObjectItem(root, "leds_arr");
     if(cJSON_IsArray(leds_arr)) {
-      wLed->set_mode(255);
+      if(wLed->get_mode() != 255) wLed->set_mode(255);
       cJSON *item = NULL;
       cJSON_ArrayForEach(item, leds_arr) {
         cJSON *id = cJSON_GetObjectItem(item, "id");
@@ -200,37 +183,6 @@ static esp_err_t api_device_info_handler(httpd_req_t *req) {
   cJSON_AddNumberToObject(_memory, "psram_min_free", memory.psram_min_free);
   cJSON_AddItemToObject(root, "memory_info", _memory);
 
-  cJSON *wifi_array = cJSON_CreateArray();
-  if(!wifi_array) {
-    cJSON_Delete(root);
-    return send_resp_json(NULL, req);
-  }
-
-  extern wifimanager *wifi;
-  std::vector<wifi_ap_record_t> wifi_networks = wifi->scan_wifi_networks();
-
-  for (size_t i = 0; i < wifi_networks.size(); i++) {
-    wifi_ap_record_t ap = wifi_networks[i];
-    cJSON *ap_obj = cJSON_CreateObject();
-    if(!ap_obj) {
-      cJSON_Delete(wifi_array);
-      cJSON_Delete(root);
-      return send_resp_json(NULL, req);
-    }
-
-    cJSON_AddStringToObject(ap_obj, "ssid", (const char*)ap.ssid);
-    cJSON_AddNumberToObject(ap_obj, "rssi", ap.rssi);
-
-    char mac_str[18];
-    snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x",
-            ap.bssid[0], ap.bssid[1], ap.bssid[2],
-            ap.bssid[3], ap.bssid[4], ap.bssid[5]);
-    cJSON_AddStringToObject(ap_obj, "bssid", mac_str);
-
-    cJSON_AddItemToArray(wifi_array, ap_obj);
-  }
-
-  cJSON_AddItemToObject(root, "wifi_networks", wifi_array);
   return send_resp_json(root, req);
 }
 
@@ -238,38 +190,28 @@ static esp_err_t f_file_get(httpd_req_t *req) {
   ESP_LOGI(TAG, "Запрос пришел get");
   FileSystem *fs = (FileSystem*)req->user_ctx;
 
-  char query[128];
-  esp_err_t err = httpd_req_get_url_query_str(req, query, sizeof(query));
-  if (err != ESP_OK) {
-    ESP_LOGW(TAG, "No query string: %s", esp_err_to_name(err));
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing query");
-    return ESP_FAIL;
-  }
-
-  ESP_LOGI(TAG, "Query: %s", query);
-
   char value[256];
 
   // ?name=test
-  if (httpd_query_key_value(query, "name", value, sizeof(value)) == ESP_OK) {
+  if (get_query_param(req, "name", value, sizeof(value))) {
     std::string text = fs->getfile(value);
     if (text.empty()) {
-        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
-        return ESP_FAIL;
+      httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
+      return ESP_FAIL;
     }
 
     cJSON *root = cJSON_Parse(text.c_str());
     if (!root) {
-        ESP_LOGE(TAG, "Файл %s содержит невалидный JSON", value);
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Invalid JSON in file");
-        return ESP_FAIL;
+      ESP_LOGE(TAG, "Файл %s содержит невалидный JSON", value);
+      httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Invalid JSON in file");
+      return ESP_FAIL;
     }
 
     return send_resp_json(root, req);
   }
 
-  // ?info
-  if (httpd_query_key_value(query, "info", value, sizeof(value)) == ESP_OK) {
+  // ?info=
+  if (get_query_param(req, "info", value, sizeof(value))) {
     std::vector<fileinfo_t> list = fs->getfilelist();
 
     cJSON *root = cJSON_CreateObject();
@@ -323,11 +265,11 @@ static esp_err_t f_file_create(httpd_req_t *req) {
     cJSON *name = cJSON_GetObjectItem(root, "name");
     cJSON *text = cJSON_GetObjectItem(root, "text");
     cJSON *id = cJSON_GetObjectItem(root, "id");
-    cJSON *continius = cJSON_GetObjectItem(root, "continius");
+    cJSON *continuous = cJSON_GetObjectItem(root, "continuous");
 
-    if(cJSON_IsString(name) && cJSON_IsString(text) && cJSON_IsNumber(id) && cJSON_IsBool(continius)) {
+    if(cJSON_IsString(name) && cJSON_IsString(text) && cJSON_IsNumber(id) && cJSON_IsBool(continuous)) {
       fs->createfile(name->valuestring, buf);
-      script_engine_compile_and_register(name->valuestring, id->valueint, continius->valueint, text->valuestring);
+      script_engine_compile_and_register(name->valuestring, id->valueint, continuous->valueint, text->valuestring);
     }
     free(buf);
     return send_json_status(req, "status", true, nullptr, nullptr);
@@ -339,20 +281,10 @@ static esp_err_t f_file_delete(httpd_req_t *req) {
   ESP_LOGI(TAG, "Запрос пришел delete file");
   FileSystem *fs = (FileSystem*)req->user_ctx;
 
-  char query[128];
-  esp_err_t err = httpd_req_get_url_query_str(req, query, sizeof(query));
-  if (err != ESP_OK) {
-    ESP_LOGW(TAG, "No query string: %s", esp_err_to_name(err));
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing query");
-    return ESP_FAIL;
-  }
-
-  ESP_LOGI(TAG, "Query: %s", query);
-
   char value[256];
 
   // ?name=test
-  if (httpd_query_key_value(query, "name", value, sizeof(value)) == ESP_OK) {
+  if (get_query_param(req, "name", value, sizeof(value))) {
     if(fs->exsistfile(value)) {
       fs->deletefile(value);
       return send_json_status(req, "status", true, nullptr, nullptr);
@@ -392,9 +324,10 @@ void server::checkCertificate() {
 }
 #endif
 
-server::server(class led *_led, class FileSystem *_fs) {
+server::server(class led *_led, class FileSystem *_fs, class wifimanager *_wifi) {
   if(_led) wLed = _led;
   if(_fs) fs = _fs;
+  if(_wifi) wifi = _wifi;
 }
 
 server::~server() {
@@ -435,7 +368,7 @@ esp_err_t server::start() {
   ssl_config.httpd.task_priority = 10;
   ssl_config.httpd.max_open_sockets = 6;
   ssl_config.httpd.stack_size = 15 * 1024;
-  
+  ssl_config.httpd.max_uri_handlers = 16; 
   esp_err_t err = httpd_ssl_start(&m_server, &ssl_config);
 #else
   uint16_t port = 80;
@@ -446,8 +379,13 @@ esp_err_t server::start() {
   config.recv_wait_timeout = 5;
   config.send_wait_timeout = 5;
   config.task_priority = 10;
-  config.max_open_sockets = 6;
-  config.stack_size = 15 * 1024;
+  config.max_open_sockets = 7;
+  config.stack_size = 13 * 1024;
+  config.max_uri_handlers = 16; 
+  config.keep_alive_enable = true;
+  config.keep_alive_idle = 3;
+  config.keep_alive_interval = 3;   
+  config.keep_alive_count = 2;
 
   esp_err_t err = httpd_start(&m_server, &config);
 #endif
@@ -510,6 +448,7 @@ esp_err_t server::start() {
   httpd_register_uri_handler(m_server, &file_delete);
 
   m_ota.register_handlers(m_server);
+  wifi->register_handlers(m_server);
 
   ESP_LOGI(TAG, "Server started successfully");
   return ESP_OK;

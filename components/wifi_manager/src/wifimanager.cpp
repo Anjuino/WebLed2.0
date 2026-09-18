@@ -1,5 +1,6 @@
 #include "wifimanager.h"
 #include "esp_system.h"
+#include "helper_server.h"
 
 static std::string getHostname() {
   uint8_t mac[6];
@@ -494,4 +495,143 @@ void wifimanager::parse_command(char* json, size_t len) {
 
   cJSON_Delete(root);
   esp_restart();
+}
+
+static esp_err_t api_network_handler_get(httpd_req_t *req) {
+  wifimanager *wifi = (wifimanager*)req->user_ctx;
+  cJSON *root = cJSON_CreateObject();
+  if(!root) return send_resp_json(NULL, req);
+
+
+  char value[128];
+  // ?info=
+  if (get_query_param(req, "info", value, sizeof(value))) {
+    std::string ssid;
+    std::string pswd;
+    if(wifi->get_info_sta(ssid, pswd)) {
+      cJSON_AddStringToObject(root, "sta_ssid", ssid.c_str());
+      cJSON_AddStringToObject(root, "sta_password", pswd.c_str());
+    }
+    if(wifi->get_info_ap(ssid, pswd)) {
+      cJSON_AddStringToObject(root, "ap_ssid", ssid.c_str());
+      cJSON_AddStringToObject(root, "ap_password", pswd.c_str());
+    }
+
+    wifi_mode_t mode = wifi->get_mode();
+    std::string mode_str = "Null";
+    if(mode == WIFI_MODE_STA) mode_str = "STA";
+    else if(mode == WIFI_MODE_AP) mode_str = "AP";
+    else if(mode == WIFI_MODE_APSTA) mode_str = "AP+STA";
+
+    cJSON_AddStringToObject(root, "mode", mode_str.c_str());
+
+    return send_resp_json(root, req);
+  }
+  // ?scanwifi=
+  if (get_query_param(req, "scanwifi", value, sizeof(value))) {
+    cJSON *wifi_array = cJSON_CreateArray();
+    if(!wifi_array) {
+      cJSON_Delete(root);
+      return send_resp_json(NULL, req);
+    }
+
+    std::vector<wifi_ap_record_t> wifi_networks = wifi->scan_wifi_networks();
+
+    for (size_t i = 0; i < wifi_networks.size(); i++) {
+      wifi_ap_record_t ap = wifi_networks[i];
+      cJSON *ap_obj = cJSON_CreateObject();
+      if(!ap_obj) {
+        cJSON_Delete(wifi_array);
+        cJSON_Delete(root);
+        return send_resp_json(NULL, req);
+      }
+
+      cJSON_AddStringToObject(ap_obj, "ssid", (const char*)ap.ssid);
+      cJSON_AddNumberToObject(ap_obj, "rssi", ap.rssi);
+
+      char mac_str[18];
+      snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x",
+              ap.bssid[0], ap.bssid[1], ap.bssid[2],
+              ap.bssid[3], ap.bssid[4], ap.bssid[5]);
+      cJSON_AddStringToObject(ap_obj, "bssid", mac_str);
+
+      cJSON_AddItemToArray(wifi_array, ap_obj);
+    }
+
+    cJSON_AddItemToObject(root, "wifi_networks", wifi_array);
+    return send_resp_json(root, req);
+  }
+
+  httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Query param is missing");
+  return ESP_FAIL;
+}
+
+static esp_err_t api_network_handler_post(httpd_req_t *req) {
+  wifimanager *wifi = (wifimanager*)req->user_ctx;
+  char *buf = nullptr;
+  if(getjson(req, &buf) == ESP_OK) {
+    cJSON *root = cJSON_Parse(buf);
+    free(buf);
+    if(!root) {
+      httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+      return ESP_FAIL;
+    }
+
+    cJSON *mode = cJSON_GetObjectItem(root, "mode");
+
+    if(mode) {
+      if(cJSON_IsString(mode)) {
+        std::string mode_str = mode->valuestring;
+        if(mode_str == "sta") {
+          cJSON *sta = cJSON_GetObjectItem(root, "sta");
+          cJSON *sta_name = cJSON_GetObjectItem(sta, "sta_ssid");
+          cJSON *sta_pswd = cJSON_GetObjectItem(sta, "sta_password");
+
+          if(cJSON_IsString(sta_name) && cJSON_IsString(sta_pswd)) {
+            if(wifi->set_sta(sta_name->valuestring, sta_pswd->valuestring, true)) {
+              send_json_status(req, "status", true, "success", "sta mode set");
+              vTaskDelay(pdMS_TO_TICKS(1000));
+              esp_restart();
+            }
+          }
+        }
+        else if(mode_str == "ap") {
+          cJSON *ap = cJSON_GetObjectItem(root, "ap");
+          cJSON *ap_name = cJSON_GetObjectItem(ap, "ap_ssid");
+          cJSON *ap_pswd = cJSON_GetObjectItem(ap, "ap_password");
+
+          if(cJSON_IsString(ap_name) && cJSON_IsString(ap_pswd)) {
+            if(wifi->set_ap(ap_name->valuestring, ap_pswd->valuestring, true)) {
+              send_json_status(req, "status", true, "success", "ap mode set");
+              vTaskDelay(pdMS_TO_TICKS(1000));
+              esp_restart();
+            }
+          }
+        }
+        else {
+          return send_json_status(req, "status", false, "error", "invalid mode");
+        }
+      }
+    }
+  }
+  return send_json_status(req, "status", false, "error", "fail parse json");
+}
+
+void wifimanager::register_handlers(httpd_handle_t httpd)
+{
+  httpd_uri_t wifi_handler_post = {
+    .uri = "/api/network",
+    .method = HTTP_POST,
+    .handler = api_network_handler_post,
+    .user_ctx = this
+  };
+  httpd_register_uri_handler(httpd, &wifi_handler_post);
+
+  httpd_uri_t wifi_handler_get = {
+    .uri = "/api/network",
+    .method = HTTP_GET,
+    .handler = api_network_handler_get,
+    .user_ctx = this
+  };
+  httpd_register_uri_handler(httpd, &wifi_handler_get);
 }

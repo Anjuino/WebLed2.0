@@ -11,6 +11,7 @@
 #include "esp_mac.h"
 #include "cJSON.h"
 #include "vector"
+#include "esp_http_server.h"
 
 #define STORAGE_WIFI "wifi"
 
@@ -81,6 +82,8 @@ class wifimanager {
 
     void parse_command(char* json, size_t len);
     void get_wifi_state_json(char* json_out, size_t max_len);
+
+    void register_handlers(httpd_handle_t httpd);
 };
 
 #endif // WIFIMANAGER_H

@@ -79,7 +79,9 @@ class led {
     bool init();
     void set_pixel(uint16_t pixel_count, uint8_t r, uint8_t g, uint8_t b);
 
-    void set_save_mode(bool new_save_mode);
+    void set_save_mode(bool new_save_mode, bool persist = true);
+    bool get_save_mode() { return save_mode;};
+    bool read_save_mode_from_nvs() { return settings.get<uint8_t>(KEY_LED_SAVE_MODE, 0) != 0; };
     void set_mode(uint8_t new_mode) { set_state(this->r, this->g, this->b, new_mode, this->speed, this->brightness); };
     void set_color(uint8_t new_r, uint8_t new_g, uint8_t new_b) { set_state(new_r, new_g, new_b, this->mode, this->speed, this->brightness); };
     void set_brightness(uint8_t new_brightness) { set_state(this->r, this->g, this->b, this->mode, this->speed, new_brightness); };

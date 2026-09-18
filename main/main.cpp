@@ -30,7 +30,7 @@ extern "C" void app_main ()
 
   uint64_t timer = (esp_timer_get_time() / 1000) + 5000;
   while(!wifi->ready()) {
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(250));
     ESP_LOGI(TAG, "wifi init...");
     if(timer < (esp_timer_get_time() / 1000)) {
       wifi->set_ap("Equalizer", "12345678", false);
@@ -39,25 +39,21 @@ extern "C" void app_main ()
     }
   }
 
+  fs = new FileSystem();
+  xTaskCreate(FileSystem::task_entry, "FileSystem", 4 * 1024, fs, 2, NULL);
   vTaskDelay(pdMS_TO_TICKS(100));
 
   wLed = new led();
-
-  fs = new FileSystem();
-  serv = new server(wLed, fs);
+  serv = new server(wLed, fs, wifi);
 
   esp_err_t ret = serv->start();
   if (ret != ESP_OK) {
     ESP_LOGE(TAG, "Failed to start server");
     return;
   }
-  vTaskDelay(pdMS_TO_TICKS(100));
 
   xTaskCreatePinnedToCore(led::task_entry, "Led", 8 * 1024, wLed, 14, NULL, 1);
   xTaskCreate(memory_task, "WatchDevice", 4 * 1024, NULL, 2, NULL);
-
-  xTaskCreate(FileSystem::task_entry, "FileSystem", 4 * 1024, fs, 2, NULL);
-  vTaskDelay(pdMS_TO_TICKS(2000));
 
   script_engine_start(wLed, fs);
 

@@ -204,14 +204,14 @@ static void script_engine_load_from_fs()
 
         cJSON *root = cJSON_Parse(file.c_str());
         cJSON *id = cJSON_GetObjectItem(root, "id");
-        cJSON *continius = cJSON_GetObjectItem(root, "continius");
+        cJSON *continuous = cJSON_GetObjectItem(root, "continuous");
         cJSON *script = cJSON_GetObjectItem(root, "text");
 
-        if (cJSON_IsNumber(id) && cJSON_IsBool(continius) && cJSON_IsString(script)) {
+        if (cJSON_IsNumber(id) && cJSON_IsBool(continuous) && cJSON_IsString(script)) {
             CompileJob boot_job{};
             boot_job.name = item.name;
             boot_job.source = script->valuestring;
-            boot_job.continuous = cJSON_IsTrue(continius);
+            boot_job.continuous = cJSON_IsTrue(continuous);
             boot_job.id = (uint8_t)id->valueint;
 
             process_job(&boot_job);

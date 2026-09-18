@@ -335,6 +335,42 @@ class NVSProxy {
       return result;
     }
 
+    bool set_blob(const char* key, const std::string& value, bool commit = false) {
+      return set_blob(key, value.data(), value.size(), commit);
+    }
+
+    std::string get_blob_as_string(const char* key, const std::string& default_value = "") {
+      if (mutex == nullptr || xSemaphoreTake(mutex, pdMS_TO_TICKS(3000)) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to take mutex in get_blob_as_string()");
+        return default_value;
+      }
+
+      if (handle == 0) {
+        xSemaphoreGive(mutex);
+        return default_value;
+      }
+
+      size_t length = 0;
+      esp_err_t err = nvs_get_blob(handle, key, NULL, &length);
+      if (err != ESP_OK || length == 0) {
+        xSemaphoreGive(mutex);
+        if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) {
+          ESP_LOGW(TAG, "Failed to get blob key '%s': %s", key, esp_err_to_name(err));
+        }
+        return default_value;
+      }
+
+      std::string result;
+      result.resize(length);
+      err = nvs_get_blob(handle, key, result.data(), &length);
+
+      xSemaphoreGive(mutex);
+      if (err != ESP_OK) {
+        return default_value;
+      }
+      return result;
+    }
+
     bool is_open() const { return handle != 0; }
 
     bool exists(const char* key) {
