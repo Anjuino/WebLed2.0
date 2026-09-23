@@ -1,6 +1,5 @@
 #include "wifimanager.h"
 #include "esp_system.h"
-#include "helper_server.h"
 
 static std::string getHostname() {
   uint8_t mac[6];
@@ -562,6 +561,7 @@ static esp_err_t api_network_handler_get(httpd_req_t *req) {
     return send_resp_json(root, req);
   }
 
+  cJSON_Delete(root);
   httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Query param is missing");
   return ESP_FAIL;
 }
@@ -609,10 +609,12 @@ static esp_err_t api_network_handler_post(httpd_req_t *req) {
           }
         }
         else {
+          cJSON_Delete(root);
           return send_json_status(req, "status", false, "error", "invalid mode");
         }
       }
     }
+    cJSON_Delete(root);
   }
   return send_json_status(req, "status", false, "error", "fail parse json");
 }

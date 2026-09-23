@@ -288,7 +288,7 @@ void script_engine_start(led *wLed, class FileSystem *_fs)
     g_fs = _fs;
     g_w   = wr_newState();
     g_vm_mutex = xSemaphoreCreateMutex();
-    g_job_queue = xQueueCreate(4, sizeof(CompileJob*));
+    g_job_queue = xQueueCreate(2, sizeof(CompileJob*));
 
     wr_loadMathLib(g_w);
 
@@ -302,7 +302,7 @@ void script_engine_start(led *wLed, class FileSystem *_fs)
     wr_registerLibraryFunction(g_w, "led::getB",     &lib_led_getB);
     wr_registerLibraryFunction(g_w, "led::delay",    &lib_led_delay);
 
-    xTaskCreatePinnedToCore(script_engine_task, "ScriptEngine", 12 * 1024, nullptr, 5, nullptr, 1);
+    xTaskCreatePinnedToCore(script_engine_task, "ScriptEngine", 10 * 1024, nullptr, 5, nullptr, 1);
 
     ESP_LOGI(TAG, "script engine started");
 }

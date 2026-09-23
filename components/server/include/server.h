@@ -8,22 +8,22 @@
 #include "ota.h"
 #include "filesystem.h"
 #include "wifimanager.h"
+#include "helper_server.h"
+#include "device.h"
 
 class server {
   private:
-
-    class led *wLed = nullptr;
     httpd_handle_t m_server = nullptr;
     OtaManager m_ota;
-    class FileSystem *fs = nullptr;
     class wifimanager *wifi = nullptr;
+    class device *controller = nullptr;
 
     #ifdef CONFIG_SERVER_HTTPS
       void checkCertificate();
     #endif
 
   public:
-    server(class led *_led, class FileSystem *_fs, class wifimanager *_wifi);
+    server(class wifimanager *_wifi, class device *_device);
     ~server();
 
     esp_err_t start();
