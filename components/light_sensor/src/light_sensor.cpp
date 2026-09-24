@@ -2,13 +2,15 @@
 
 void light_sensor::task_entry(void* arg) {
   light_sensor* self = (light_sensor*)arg;
+  int raw = 0;
   int value = 0;
+  int prev_value = 0;
 
   while (true) {
-    if (adc_oneshot_read(self->adc_handle, self->channel, &value) == ESP_OK) {
-      if (self->user_cb) {
-        self->user_cb(value, self->user_arg);
-      }
+    if (adc_oneshot_read(self->adc_handle, self->channel, &raw) == ESP_OK) {
+      value = 0.3 * prev_value + 0.7 * raw;
+      prev_value = value; 
+      self->user_cb(value, self->user_arg);
     }
     vTaskDelay(pdMS_TO_TICKS(self->period_ms));
   }

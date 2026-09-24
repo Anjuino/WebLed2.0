@@ -34,7 +34,7 @@ void memory_task(void *pvParameters)
         ESP_ERROR_CHECK(temperature_sensor_get_celsius(temp_handle, &temp_cpu));
         ESP_LOGI(TAG, "Temperature: %.1f C", temp_cpu);
         
-        vTaskDelay(pdMS_TO_TICKS(30000));
+        vTaskDelay(pdMS_TO_TICKS(60000 * 2));
     }
 }
 

@@ -1,54 +1,51 @@
 #include "device.h"
+#include "i_button.h"
+#include "i_light_sensor.h"
 #include <algorithm>
 #include <math.h>
 #include "esp_log.h"
 
 static const char *TAG = "device";
 
-static void on_press(void *user_data) {
-  ESP_LOGE(TAG, "btn press");
-}
-
-static void on_light(int value, void *user_data) {
-  ESP_LOGE(TAG, "light = %d", value);
-}
-
 device::device() : settings(STORAGE_DEVICE, false) 
 {
-  uint8_t init_flag = settings.get<uint8_t>(KEY_INIT, 0);
-
-  if (init_flag == 0) {
-    //первый запуск
-
-  } else {
-    //послед запуски
-  }
-
+  owner_mutex = xSemaphoreCreateMutex();
   t_time.sync();
   wled = new led();
   xTaskCreatePinnedToCore(led::task_entry, "Led", 6 * 1024, wled, 10, NULL, 1);
-
+  xTaskCreatePinnedToCore(memory_task, "WatchDevice", 4 * 1024, NULL, 2, NULL, 1);
 
   fs = new FileSystem();
-  fs->init();
   script_engine_start(wled, fs);
+
+  std::string raw1 = settings.get(KEY_BUTTON_CONFIG, "");
+  if (!raw1.empty()) {
+    cJSON *cfg = cJSON_Parse(raw1.c_str());
+    if (cfg) {
+      auto btn = std::make_unique<i_button>(this);
+      btn->from_json(cfg);
+      cJSON_Delete(cfg);
+      btn->start();
+      automations.push_back(std::move(btn));
+    }
+  }
+
+  std::string raw2 = settings.get(KEY_LIGHT_SENSOR_CONFIG, "");
+  if (!raw2.empty()) {
+    cJSON *cfg = cJSON_Parse(raw2.c_str());
+    if (cfg) {
+      auto sensor = std::make_unique<i_light_sensor>(this);
+      sensor->from_json(cfg);
+      cJSON_Delete(cfg);
+      sensor->start();
+      automations.push_back(std::move(sensor));
+    }
+  }
 }
 
 device::~device()
 {
 
-}
-
-led *device::get_led()
-{
-  if(wled) return wled;
-  return NULL;
-}
-
-FileSystem *device::get_fs()
-{
-  if(fs) return fs;
-  return NULL;
 }
 
 static esp_err_t api_device_handler_post(httpd_req_t *req) {
@@ -63,21 +60,37 @@ static esp_err_t api_device_handler_post(httpd_req_t *req) {
       return ESP_FAIL;
     }
 
+    bool need_commit = false;
     cJSON *json_button = cJSON_GetObjectItem(root, "button");
-    if(json_button) {
-      class button *btn = new button();
-      btn->init(GPIO_NUM_6, on_press);
-      contorller->btn = btn;
+    if(cJSON_IsObject(json_button)) {
+      char *str = cJSON_PrintUnformatted(json_button);
+      if(str) {
+        if(contorller->settings.set(KEY_BUTTON_CONFIG, str)) {
+          need_commit = true;
+        }
+        free(str);
+      }
     }
 
-    cJSON *json_light_sensor = cJSON_GetObjectItem(root, "button");
-    if(json_light_sensor) {
-      class light_sensor *sensor = new light_sensor();
-      contorller->l_sensor = sensor;
-      sensor->init(GPIO_NUM_2, on_light, 20000);
+    cJSON *json_light_sensor = cJSON_GetObjectItem(root, "light_sensor");
+    if(cJSON_IsObject(json_light_sensor)) {
+      char *str = cJSON_PrintUnformatted(json_light_sensor);
+      if(str) {
+        if(contorller->settings.set(KEY_LIGHT_SENSOR_CONFIG, str)) {
+          need_commit = true;
+        }
+        free(str);
+      }
     }
 
-    return send_json_status(req, "status", true, nullptr, nullptr);
+    if(need_commit) {
+      contorller->settings.commit();
+      ESP_LOGI(TAG, "Сохранил изменения");
+    }
+    send_json_status(req, "status", true, nullptr, nullptr);
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    esp_restart();
   }
   return send_json_status(req, "status", false, "error", "fail parse json");
 }
@@ -88,6 +101,18 @@ static esp_err_t api_device_handler_get(httpd_req_t *req) {
   if(!root) return send_resp_json(NULL, req);
 
   char value[256];
+  if (get_query_param(req, "config", value, sizeof(value))) {
+    std::string raw_button = contorller->settings.get(KEY_BUTTON_CONFIG, "");
+    cJSON *button = cJSON_Parse(raw_button.c_str());
+    if (button) cJSON_AddItemToObject(root, "button", button);
+
+    std::string raw_light = contorller->settings.get(KEY_LIGHT_SENSOR_CONFIG, "");
+    cJSON *light_sensor = cJSON_Parse(raw_light.c_str());
+    if (light_sensor) cJSON_AddItemToObject(root, "light_sensor", light_sensor);
+
+    return send_resp_json(root, req);
+  }
+
   if (get_query_param(req, "info", value, sizeof(value))) {
     memory_info memory = getstatus();
     double temperature = round(memory.temperature * 100.0) / 100.0;
@@ -132,7 +157,8 @@ static esp_err_t api_led_info_handler(httpd_req_t *req) {
     cJSON *settings = cJSON_CreateObject();
     if(settings) {
       cJSON_AddNumberToObject(settings, "led_count", wLed->get_count_led());
-      cJSON_AddBoolToObject(settings, "save_mode", wLed->get_save_mode()); 
+      cJSON_AddBoolToObject(settings, "save_mode", wLed->get_save_mode());
+      cJSON_AddBoolToObject(settings, "manual", controller->is_manual());
       cJSON_AddItemToObject(root, "settings", settings);
     } else {
       cJSON_Delete(root);
@@ -198,6 +224,18 @@ static esp_err_t api_led_control_handler(httpd_req_t *req) {
       return ESP_FAIL;
     }
 
+    // settings.manual читаем до остальных изменений, чтобы в одном запросе
+    // можно было включить ручное управление и сразу поменять ленту
+    cJSON *manual = cJSON_GetObjectItem(cJSON_GetObjectItem(root, "settings"), "manual");
+    if(cJSON_IsBool(manual)) controller->set_manual(cJSON_IsTrue(manual));
+
+    // запрос меняет ленту, если пришёл state или leds_arr
+    bool changes_led = cJSON_IsObject(cJSON_GetObjectItem(root, "state")) ||
+                       cJSON_IsArray(cJSON_GetObjectItem(root, "leds_arr"));
+
+    // если есть автоматика, менять ленту с панели можно только в ручном режиме
+    bool blocked = changes_led && !controller->is_manual() && controller->has_automations();
+
     cJSON *settings = cJSON_GetObjectItem(root, "settings");
     if(settings) {
       cJSON *led_count = cJSON_GetObjectItem(settings, "led_count");
@@ -208,19 +246,25 @@ static esp_err_t api_led_control_handler(httpd_req_t *req) {
     }
 
     cJSON *state = cJSON_GetObjectItem(root, "state");
-    if(state) {
+    if(state && !blocked) {
+      // начинаем с текущих значений — то, чего нет в запросе, не меняется
+      uint8_t new_mode = wLed->get_mode();
+      uint8_t new_speed = wLed->get_speed();
+      uint8_t new_brightness = wLed->get_brightness();
+      auto [new_r, new_g, new_b] = wLed->get_color();
+
       cJSON *mode = cJSON_GetObjectItem(state, "mode");
       if(cJSON_IsNumber(mode) && wLed->is_valid_mode((uint8_t)mode->valueint)) {
-        wLed->set_mode(mode->valueint);
+        new_mode = mode->valueint;
       }
 
       cJSON *speed = cJSON_GetObjectItem(state, "speed");
       if(cJSON_IsNumber(speed)) {
-        wLed->set_speed(speed->valueint);
+        new_speed = speed->valueint;
       }
       cJSON *brightness = cJSON_GetObjectItem(state, "brightness");
       if(cJSON_IsNumber(brightness)) {
-        wLed->set_brightness(brightness->valueint);
+        new_brightness = brightness->valueint;
       }
       cJSON *color = cJSON_GetObjectItem(state, "color");
       if(cJSON_IsObject(color)) {
@@ -228,14 +272,19 @@ static esp_err_t api_led_control_handler(httpd_req_t *req) {
         cJSON *g = cJSON_GetObjectItem(color, "g");
         cJSON *b = cJSON_GetObjectItem(color, "b");
         if(cJSON_IsNumber(r) && cJSON_IsNumber(g) && cJSON_IsNumber(b)) {
-          wLed->set_color(r->valueint, g->valueint, b->valueint);
+          new_r = r->valueint;
+          new_g = g->valueint;
+          new_b = b->valueint;
         }
       }
+
+      // один вызов: без промежуточных кадров, один лог, одна запись в NVS
+      wLed->set_state(new_r, new_g, new_b, new_mode, new_speed, new_brightness);
     }
 
     cJSON *leds_arr = cJSON_GetObjectItem(root, "leds_arr");
-    if(cJSON_IsArray(leds_arr)) {
-      if(wLed->get_mode() != 255) wLed->set_mode(255);
+    if(cJSON_IsArray(leds_arr) && !blocked) {
+      if(wLed->get_mode() != 253) wLed->set_mode(253);
       cJSON *item = NULL;
       cJSON_ArrayForEach(item, leds_arr) {
         cJSON *id = cJSON_GetObjectItem(item, "id");
@@ -252,10 +301,16 @@ static esp_err_t api_led_control_handler(httpd_req_t *req) {
         ESP_LOGI(TAG, "led id=%d color=(%d,%d,%d)", id->valueint, r->valueint, g->valueint, b->valueint);
         wLed->set_pixel(id->valueint, r->valueint, g->valueint, b->valueint);
       }
-      wLed->show();
+      wLed->refresh();
     }
 
     cJSON_Delete(root);
+
+    if(blocked) {
+      ESP_LOGI(TAG, "led: запрос отклонён, работает автоматика, ручное управление выключено");
+      httpd_resp_set_status(req, "409 Conflict");
+      return send_json_status(req, "status", false, "error", "работает автоматика. Включите ручное управление");
+    }
     return send_json_status(req, "status", true, nullptr, nullptr);
   }
 
@@ -297,7 +352,9 @@ static esp_err_t f_file_get(httpd_req_t *req) {
       return ESP_FAIL;
     }
 
+    // крепим к root сразу: любой cJSON_Delete(root) ниже освободит и массив
     cJSON *file_array = cJSON_CreateArray();
+    cJSON_AddItemToObject(root, "files", file_array);
     uint8_t count = 0;
     for (auto item : list) {
       cJSON *file_obj = cJSON_CreateObject();
@@ -318,7 +375,6 @@ static esp_err_t f_file_get(httpd_req_t *req) {
     cJSON_AddNumberToObject(info_fs, "size_total", total);
     cJSON_AddNumberToObject(info_fs, "size_used", used);
     cJSON_AddItemToObject(root, "info", info_fs);
-    cJSON_AddItemToObject(root, "files", file_array);
     return send_resp_json(root, req);
   }
 
@@ -433,4 +489,111 @@ void device::register_handlers(httpd_handle_t httpd)
     .user_ctx = this
   };
   httpd_register_uri_handler(httpd, &file_delete);
+}
+
+bool device::is_time_synced() {
+  // пока SNTP не отработал, часы показывают 1970 год
+  if (!time_synced) {
+    tm now = t_time.get_current_time();
+    time_synced = now.tm_year >= (2024 - 1900);
+  }
+  return time_synced;
+}
+
+bool device::engage(Automation *who) {
+  xSemaphoreTake(owner_mutex, portMAX_DELAY);
+  Automation *prev = current_owner;
+  bool ok = !manual_active                                  // ручное управление — отказ всем
+         && (prev == nullptr                                // никого нет
+         || prev == who                                     // это я же, повторно
+         || who->get_priority() > prev->get_priority());    // я главнее
+
+  if (ok && prev != who) {
+    // снимок только если у источника его ещё нет. Если источник перебили, а потом
+    // вернули ему ленту, на ленте уже ЕГО состояние — старый снимок сохраняем
+    if (!who->has_saved) {
+      auto [r, g, b] = wled->get_color();
+      who->saved = { wled->get_mode(), wled->get_speed(), wled->get_brightness(), r, g, b };
+      who->has_saved = true;
+    }
+    current_owner = who;
+  }
+  xSemaphoreGive(owner_mutex);
+
+  if (!ok) {
+    ESP_LOGI(TAG, "engage: %s — отказ, лентой владеет %s", who->get_name().c_str(), prev ? prev->get_name().c_str() : "ручное управление");
+  } else if (prev != who) {
+    ESP_LOGI(TAG, "engage: %s захватил ленту (был %s)", who->get_name().c_str(), prev ? prev->get_name().c_str() : "никто");
+  }
+  return ok;
+}
+
+void device::release(Automation *who) {
+  xSemaphoreTake(owner_mutex, portMAX_DELAY);
+  bool was_owner = current_owner == who;
+  bool restored = false;
+  bool handed = false;
+  if (was_owner) {
+    current_owner = nullptr;
+    if (who->has_saved) {
+      const led_state &s = who->saved;
+      wled->set_state(s.r, s.g, s.b, s.mode, s.speed, s.brightness);
+      who->has_saved = false;
+      restored = true;
+    }
+  } else if (who->has_saved) {
+    if (current_owner) {
+      // источник сдаётся, пока лентой владеет другой. Владелец хранит снимок
+      // состояния этого источника — отдаём владельцу то, что было до него
+      if (current_owner->has_saved) current_owner->saved = who->saved;
+      handed = true;
+    } else {
+      // владельца нет: верхний источник уже вернул ленту в состояние этого
+      // источника — восстанавливаем то, что было до него
+      const led_state &s = who->saved;
+      wled->set_state(s.r, s.g, s.b, s.mode, s.speed, s.brightness);
+      restored = true;
+    }
+    who->has_saved = false;
+  }
+  xSemaphoreGive(owner_mutex);
+
+  if (restored) {
+    ESP_LOGI(TAG, "release: %s отпустил ленту, состояние восстановлено", who->get_name().c_str());
+  } else if (handed) {
+    ESP_LOGI(TAG, "release: %s — не владелец, снимок передан владельцу", who->get_name().c_str());
+  } else {
+    ESP_LOGI(TAG, "release: %s — не владелец, игнор", who->get_name().c_str());
+  }
+}
+
+std::string device::get_owner_name() {
+  xSemaphoreTake(owner_mutex, portMAX_DELAY);
+  std::string owner_name = current_owner ? current_owner->get_name() : "";
+  xSemaphoreGive(owner_mutex);
+  return owner_name;
+}
+
+void device::set_manual(bool on) {
+  xSemaphoreTake(owner_mutex, portMAX_DELAY);
+  bool was_active = manual_active;
+  manual_active = on;
+
+  // при включении снимаем владельца и выбрасываем снимки у ВСЕХ источников
+  // (и у перебитых тоже): при своём release никто не должен восстанавливать
+  // старое поверх ручного
+  Automation *prev = nullptr;
+  if (on) {
+    prev = current_owner;
+    current_owner = nullptr;
+    for (auto &a : automations) a->has_saved = false;
+  }
+  xSemaphoreGive(owner_mutex);
+
+  if (on && !was_active) {
+    ESP_LOGI(TAG, "manual: ручное управление ВКЛ, автоматика заблокирована (был %s)", prev ? prev->get_name().c_str() : "никто");
+  } else if (!on && was_active) {
+    // ничего не восстанавливаем — ручное состояние остаётся, пока автоматике не понадобится лента
+    ESP_LOGI(TAG, "manual: ручное управление ВЫКЛ, автоматика снова работает");
+  }
 }

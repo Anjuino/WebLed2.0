@@ -142,7 +142,7 @@ class NVSProxy {
       return result;
     }
 
-    template<typename T>
+    template<typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
     bool set(const char* key, T value, bool commit = false) {
       if (mutex == nullptr || xSemaphoreTake(mutex, pdMS_TO_TICKS(3000)) != pdTRUE) {
         ESP_LOGE(TAG, "Failed to take mutex in set()");

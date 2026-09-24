@@ -25,7 +25,7 @@ class FileSystem{
     virtual void task();
 
   public:
-    FileSystem() {};
+    FileSystem() { init(); };
     ~FileSystem() {};
 
     static void task_entry(void* pvParameters) { static_cast<FileSystem*>(pvParameters)->task(); };

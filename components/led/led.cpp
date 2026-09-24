@@ -95,32 +95,27 @@ bool led::init()
 
 bool led::update_led_count(uint16_t new_led_count)
 {
-  off();
-  if (xSemaphoreTake(mutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
-    ESP_LOGE(TAG, "Не удалось захватить мьютекс");
-    return false;
-  }
-
-  ESP_LOGI(TAG, "Обновление количества светодоидов, текущее %u", led_count);
-  //mode = 255;
-  led_strip_del(led_strip);
-  led_strip = nullptr;
+  if (new_led_count == 0) return false;
 
   if (!settings.set(KEY_LED_COUNT, new_led_count, true)) {
     ESP_LOGE(TAG, "Ошибка сохранения количества светодиодов");
     return false;
   }
 
-  led_count = new_led_count;
+  requested_count = new_led_count;
+  refresh();
+  return true;
+}
 
-  if (init()) {
-    xSemaphoreGive(mutex);
-    ESP_LOGI(TAG, "Обновление успешно %u", new_led_count);
-    return true;
-  }
-  ESP_LOGI(TAG, "Перезапуск ленты закончился с ошибкой");
-  xSemaphoreGive(mutex);
-  return false;
+void led::reinit_strip(uint16_t new_led_count)
+{
+  ESP_LOGI(TAG, "Обновление количества светодиодов: %u -> %u", led_count, new_led_count);
+  off();
+  led_strip_del(led_strip);
+  led_strip = nullptr;
+
+  led_count = new_led_count;
+  init();
 }
 
 void led::set_pixel(uint16_t pixel_count, uint8_t r, uint8_t g, uint8_t b)
@@ -140,14 +135,19 @@ void led::set_pixel(uint16_t pixel_count, uint8_t r, uint8_t g, uint8_t b)
 
 void led::task()
 {
+  task_handle = xTaskGetCurrentTaskHandle();
   this->init();
   while (true) {
+    uint16_t new_count = requested_count.exchange(0);
+    if (new_count) reinit_strip(new_count);
+
     const LedEffect *fx = find_effect(mode);
 
     if (fx && fx->continuous) {
       fx->apply(this, fx->user_data);
     } else {
-      vTaskDelay(pdMS_TO_TICKS(500));
+      if (fx) fx->apply(this, fx->user_data);
+      ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     }
   }
 }
@@ -213,10 +213,7 @@ void led::set_state(uint8_t _r, uint8_t _g, uint8_t _b, uint8_t _mode, uint8_t _
 
   xSemaphoreGive(mutex);
 
-  const LedEffect *fx = find_effect(mode);
-  if (fx && !fx->continuous) {
-    fx->apply(this, fx->user_data);
-  }
+  refresh();   // сами в ленту не пишем — задача Led применит режим
 }
 
 void led::set_save_mode(bool new_save_mode, bool persist)

@@ -30,7 +30,7 @@ static void rainbow(led *self, void *)
 
   rainbow_offset = (rainbow_offset + 1) % 255;
   self->show();
-  vTaskDelay(pdMS_TO_TICKS(110 - self->get_speed()));
+  self->wait(110 - self->get_speed());
 }
 
 static void static_color(led *self, void *)
@@ -48,9 +48,15 @@ static void off(led *self, void *)
   self->off();
 }
 
+static void manual(led *self, void *)
+{
+  self->show();
+}
+
 void register_builtin_effects(led *self)
 {
   self->add_effect(1,   "Радуга",         true,  &rainbow);
+  self->add_effect(253, "Ручной",         false, &manual);
   self->add_effect(254, "Статичный цвет", false, &static_color);
   self->add_effect(255, "Выкл",           false, &off);
 }

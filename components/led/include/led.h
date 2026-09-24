@@ -4,9 +4,11 @@
 #include "led_strip.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "esp_log.h"
 #include "nvs_proxy.h"
 #include <cstring>
+#include <atomic>
 #include <tuple>
 #include <vector>
 
@@ -45,6 +47,11 @@ class led {
 
     led_strip_handle_t led_strip = nullptr;
     SemaphoreHandle_t mutex = nullptr;
+
+    TaskHandle_t task_handle = nullptr;
+    std::atomic<uint16_t> requested_count{0};   // != 0 — задача Led пересоздаст ленту
+
+    void reinit_strip(uint16_t new_led_count);
 
     std::vector<LedEffect> effects_table;
 
@@ -97,6 +104,9 @@ class led {
 
     bool update_led_count(uint16_t new_count);
     void show(void);
+
+    void refresh() { if (task_handle) xTaskNotifyGive(task_handle); };
+    void wait(uint32_t ms) { ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(ms)); };
 
     void off(void);
 

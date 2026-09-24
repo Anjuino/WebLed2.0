@@ -40,6 +40,5 @@ extern "C" void app_main ()
     return;
   }
 
-  xTaskCreate(memory_task, "WatchDevice", 4 * 1024, NULL, 2, NULL);
   vTaskDelete(NULL);
 }
