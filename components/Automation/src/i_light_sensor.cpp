@@ -16,6 +16,15 @@ i_light_sensor::i_light_sensor(device *_dev) : Automation(_dev) {
   state.b = 80;
 }
 
+void i_light_sensor::get_state(cJSON *json) {
+  cJSON *light = cJSON_CreateObject();
+
+  cJSON_AddNumberToObject(light, "value", last_value);
+  cJSON_AddBoolToObject(light, "is_dark", is_dark);
+  cJSON_AddBoolToObject(light, "applied", applied);
+  cJSON_AddItemToObject(json, "light_sensor", light);
+}
+
 void i_light_sensor::from_json(cJSON *json) {
   cJSON *j_priority = cJSON_GetObjectItem(json, "priority");
   if (cJSON_IsNumber(j_priority) && j_priority->valueint >= 0 && j_priority->valueint <= 255) {
@@ -94,6 +103,7 @@ void i_light_sensor::start() {
 }
 
 void i_light_sensor::on_light(int value) {
+  last_value = value;      
   bool less_is_darker = dark < light;
   if (less_is_darker ? value <= dark : value >= dark) {
     is_dark = true;

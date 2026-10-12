@@ -24,6 +24,16 @@
 #endif
 
 static const char *TAG = "Server";
+
+// тестовая веб-страница, встроена через target_add_binary_data(... TEXT)
+extern const char index_html_start[] asm("_binary_index_html_start");
+
+static esp_err_t index_handler(httpd_req_t *req) {
+  httpd_resp_set_type(req, "text/html; charset=utf-8");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+  return httpd_resp_send(req, index_html_start, HTTPD_RESP_USE_STRLEN);
+}
+
 #ifdef CONFIG_SERVER_HTTPS
 void server::checkCertificate() {
   int ret;
@@ -127,6 +137,14 @@ esp_err_t server::start() {
     #endif
       return err;
   }
+
+  httpd_uri_t index_uri = {
+    .uri = "/",
+    .method = HTTP_GET,
+    .handler = index_handler,
+    .user_ctx = nullptr
+  };
+  httpd_register_uri_handler(m_server, &index_uri);
 
   m_ota.register_handlers(m_server);
   wifi->register_handlers(m_server);

@@ -76,8 +76,8 @@ bool led::init()
   led_strip_config_t strip_config = {};
   strip_config.strip_gpio_num = 21;                   //TODO поправить номер пина, добавить в настройку 2 для esp32wroom
   strip_config.max_leds = led_count;
-  strip_config.led_pixel_format = LED_PIXEL_FORMAT_GRB;
-  strip_config.led_model = LED_MODEL_WS2812;
+  strip_config.led_pixel_format = LED_PIXEL_FORMAT_RGB;
+  strip_config.led_model = LED_MODEL_WS2815;
   strip_config.flags.invert_out = false;
 
   led_strip_rmt_config_t rmt_config = {};

@@ -1,0 +1,1688 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0e13">
+<title>WebLed</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #0b0e13; --surface: #12161d; --surface-2: #181d26; --surface-3: #1e2430;
+    --line: #232a35; --line-2: #2e3746; --text: #e8ebf0; --muted: #8591a3; --dim: #5d6879;
+    --a1: #5b8cff; --a2: #a46bff; --accent: #7b7dff;
+    --ok: #34d399; --err: #f87171; --warn: #fbbf24;
+    --r: 16px;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html { color-scheme: dark; }
+  body {
+    margin: 0; color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background:
+      radial-gradient(1100px 600px at 85% -10%, rgba(91, 140, 255, .09), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgba(164, 107, 255, .08), transparent 60%),
+      var(--bg);
+    background-attachment: fixed; min-height: 100vh; -webkit-tap-highlight-color: transparent;
+  }
+  a { color: inherit; }
+  h1, h2, h3 { margin: 0; font-weight: 650; letter-spacing: -.01em; }
+  h1 { font-size: 26px; }
+  h3 { font-size: 15px; }
+  svg { display: block; flex: none; }
+  i[data-ic] { display: inline-flex; }
+
+  /* ---------- каркас ---------- */
+  .sidebar {
+    position: fixed; inset: 0 auto 0 0; width: 240px; z-index: 10; display: flex; flex-direction: column;
+    padding: 20px 14px; background: rgba(15, 18, 24, .82); backdrop-filter: blur(14px); border-right: 1px solid var(--line);
+  }
+  .logo { display: flex; align-items: center; gap: 12px; padding: 4px 10px 22px; font-size: 18px; font-weight: 700; }
+  .logo small { display: block; font-size: 11px; font-weight: 500; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+  .logo-dot { width: 30px; height: 30px; border-radius: 50%; flex: none; position: relative;
+              background: conic-gradient(#ff4d6d, #ffb84d, #f4ff4d, #4dff9a, #4dd2ff, #6b6bff, #d04dff, #ff4d6d);
+              animation: spin 6s linear infinite; box-shadow: 0 0 18px rgba(140, 110, 255, .55); }
+  .logo-dot::after { content: ''; position: absolute; inset: 7px; border-radius: 50%; background: var(--bg); }
+  .nav-list { display: flex; flex-direction: column; gap: 2px; }
+  .nav { position: relative; display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px;
+         color: var(--muted); text-decoration: none; font-weight: 500; transition: background .15s, color .15s; }
+  .nav:hover { background: var(--surface-2); color: var(--text); }
+  .nav.active { background: linear-gradient(90deg, rgba(91, 140, 255, .16), rgba(164, 107, 255, .06)); color: var(--text); }
+  .nav.active::before { content: ''; position: absolute; left: -14px; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0;
+                        background: linear-gradient(var(--a1), var(--a2)); }
+  .nav.active svg { color: var(--a1); }
+  .nav .dotmark { margin-left: auto; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 8px var(--warn); }
+  .side-foot { margin-top: auto; padding: 14px 12px 0; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); display: grid; gap: 6px; }
+  .conn { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; }
+  .conn::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
+  .conn.on::before { background: var(--ok); box-shadow: 0 0 0 3px rgba(52, 211, 153, .18); }
+  .conn.off { color: var(--err); }
+  .conn.off::before { background: var(--err); box-shadow: 0 0 0 3px rgba(248, 113, 113, .18); }
+  .topbar { display: none; }
+  main { margin-left: 240px; padding: 28px 32px 48px; max-width: 1240px; }
+
+  .ph { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+  .ph p { margin: 4px 0 0; color: var(--muted); }
+  .ph-act { display: flex; gap: 8px; align-items: center; }
+  .page { animation: fadein .25s ease; }
+  @keyframes fadein { from { opacity: 0; transform: translateY(6px); } }
+
+  /* ---------- базовые элементы ---------- */
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px; min-width: 0; }
+  .card-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+  .card-h a { color: var(--muted); text-decoration: none; font-size: 13px; }
+  .card-h a:hover { color: var(--text); }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .span2 { grid-column: 1 / -1; }
+  .muted { color: var(--muted); }
+  .small { font-size: 12px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .row.between { justify-content: space-between; }
+  .mt { margin-top: 14px; }
+  .eyebrow { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 14px; border-radius: 10px;
+         border: 1px solid var(--line-2); background: var(--surface-2); color: var(--text); font: inherit; font-weight: 550;
+         cursor: pointer; text-decoration: none; transition: background .15s, border-color .15s, transform .1s, box-shadow .15s; white-space: nowrap; }
+  .btn:hover { background: var(--surface-3); border-color: #3a4558; }
+  .btn:active { transform: scale(.97); }
+  .btn:disabled { opacity: .45; pointer-events: none; }
+  .btn.primary { background: linear-gradient(135deg, var(--a1), var(--a2)); border-color: transparent; color: #fff;
+                 box-shadow: 0 6px 18px -6px rgba(123, 125, 255, .7); }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn.danger { color: var(--err); border-color: rgba(248, 113, 113, .3); background: rgba(248, 113, 113, .07); }
+  .btn.danger:hover { background: rgba(248, 113, 113, .14); }
+  .btn.danger-solid { background: #e5484d; border-color: transparent; color: #fff; }
+  .btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
+  .btn.ghost:hover { color: var(--text); background: var(--surface-2); }
+  .btn.sm { padding: 5px 10px; font-size: 12px; border-radius: 8px; }
+  .btn.icon { width: 38px; height: 38px; padding: 0; }
+  .btn.on { border-color: rgba(52, 211, 153, .45); background: rgba(52, 211, 153, .1); color: #7ff0c3; }
+  .btn.spin svg { animation: spin 1s linear infinite; }
+
+  input, select, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line-2);
+                            border-radius: 10px; padding: 9px 11px; outline: none; transition: border-color .15s, box-shadow .15s; min-width: 0; }
+  input:focus, select:focus, textarea:focus { border-color: var(--a1); box-shadow: 0 0 0 3px rgba(91, 140, 255, .18); }
+  textarea { width: 100%; resize: vertical; }
+  textarea.code { font: 12.5px/1.55 ui-monospace, "Cascadia Code", Consolas, monospace; min-height: 320px; tab-size: 2; background: #090b10; }
+  label.f { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
+  label.f > span:first-child { width: 96px; flex: none; color: var(--muted); font-size: 13px; }
+  label.f > input:not([type=range]):not([type=checkbox]):not([type=color]), label.f > select { flex: 1; }
+  .num { width: 76px; flex: none; }
+
+  input[type=range] { -webkit-appearance: none; appearance: none; flex: 1; height: 6px; padding: 0; border: none; border-radius: 3px; cursor: pointer;
+                      background: linear-gradient(90deg, var(--a1), var(--a2)) 0 / var(--p, 50%) 100% no-repeat, var(--line-2); }
+  input[type=range]:focus { box-shadow: none; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #fff;
+                      box-shadow: 0 0 0 4px rgba(123, 125, 255, .28), 0 2px 6px rgba(0, 0, 0, .5); transition: box-shadow .15s; }
+  input[type=range]:active::-webkit-slider-thumb { box-shadow: 0 0 0 7px rgba(123, 125, 255, .3), 0 2px 6px rgba(0, 0, 0, .5); }
+  input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border: none; border-radius: 50%; background: #fff;
+                      box-shadow: 0 0 0 4px rgba(123, 125, 255, .28), 0 2px 6px rgba(0, 0, 0, .5); }
+  input[type=color] { -webkit-appearance: none; appearance: none; padding: 0; border: none; background: none; cursor: pointer; }
+  input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+  input[type=color]::-webkit-color-swatch { border: 2px solid rgba(255, 255, 255, .15); border-radius: 10px; }
+  input[type=color]::-moz-color-swatch { border: 2px solid rgba(255, 255, 255, .15); border-radius: 10px; }
+  input[type=time] { color-scheme: dark; }
+  .val { min-width: 38px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .sw { position: relative; display: inline-block; width: 40px; height: 22px; flex: none; cursor: pointer; }
+  .sw input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .sw span { position: absolute; inset: 0; border-radius: 11px; background: var(--line-2); transition: .2s; }
+  .sw span::after { content: ''; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: .2s; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+  .sw input:checked + span { background: linear-gradient(135deg, var(--a1), var(--a2)); }
+  .sw input:checked + span::after { transform: translateX(18px); }
+  .swrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 0; }
+  .swrow b { font-weight: 550; }
+
+  .seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--bg); border: 1px solid var(--line-2); border-radius: 11px; }
+  .seg button { border: none; background: none; color: var(--muted); font: inherit; font-weight: 550; padding: 6px 14px; border-radius: 8px; cursor: pointer; }
+  .seg button.active { background: var(--surface-3); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+
+  .badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 20px;
+           background: var(--surface-3); color: var(--muted); white-space: nowrap; }
+  .badge.on { background: rgba(52, 211, 153, .12); color: #6ee7b7; }
+  .badge.on::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); animation: blink 1.4s infinite; }
+  .badge.warn { background: rgba(251, 191, 36, .12); color: var(--warn); }
+  .badge.err { background: rgba(248, 113, 113, .12); color: var(--err); }
+  .badge.acc { background: rgba(91, 140, 255, .14); color: #9db8ff; }
+  @keyframes blink { 50% { opacity: .3; } }
+
+  .banner { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .banner > span { flex: 1; min-width: 200px; }
+  .banner.warn { background: rgba(251, 191, 36, .08); border: 1px solid rgba(251, 191, 36, .25); color: #fcd675; }
+  .banner.info { background: rgba(91, 140, 255, .08); border: 1px solid rgba(91, 140, 255, .25); color: #b5c9ff; }
+
+  .bar { height: 6px; border-radius: 3px; background: var(--line-2); overflow: hidden; }
+  .bar > i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--a1), var(--a2)); transition: width .5s; }
+  .bar.hot > i { background: linear-gradient(90deg, var(--warn), var(--err)); }
+
+  pre { margin: 0; background: #090b10; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+        font: 12px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-all; max-height: 320px; overflow: auto; }
+
+  /* ---------- превью ленты (шар, свотчи, карточки режимов) ---------- */
+  .prev { background: #232a35; box-shadow: 0 0 var(--gs, 40px) var(--glow, transparent); transition: background .3s, box-shadow .3s; }
+  .prev.rainbow { background: conic-gradient(#ff4d6d, #ffb84d, #f4ff4d, #4dff9a, #4dd2ff, #6b6bff, #d04dff, #ff4d6d) !important; animation: spin var(--dur, 2s) linear infinite; }
+  .prev.pulse { animation: pulse var(--dur, 2s) ease-in-out infinite; }
+  .prev.off { background: #141922 !important; box-shadow: inset 0 0 0 1px var(--line-2) !important; }
+  .prev.pix { background: repeating-linear-gradient(135deg, #ff5a5a 0 22%, #5affa0 22% 44%, #5a8cff 44% 66%, #ffd65a 66% 88%) !important; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 50% { opacity: .45; } }
+
+  /* ---------- обзор ---------- */
+  .hero { display: flex; gap: 32px; align-items: center; padding: 28px; margin-bottom: 16px; position: relative; overflow: hidden; }
+  .hero::after { content: ''; position: absolute; right: -120px; top: -120px; width: 320px; height: 320px; border-radius: 50%;
+                 background: radial-gradient(var(--heroGlow, rgba(91,140,255,.12)), transparent 70%); pointer-events: none; transition: background .4s; }
+  .orb-wrap { position: relative; width: 168px; height: 168px; flex: none; display: grid; place-items: center; }
+  .orb-wrap::before { content: ''; position: absolute; inset: -12px; border-radius: 50%; border: 1px dashed rgba(255, 255, 255, .09); animation: spin 40s linear infinite; }
+  .orb { width: 150px; height: 150px; border-radius: 50%; --gs: 70px; position: relative; }
+  .orb::after { content: ''; position: absolute; inset: 0; border-radius: 50%;
+                background: radial-gradient(circle at 35% 30%, rgba(255,255,255,.35), transparent 45%), radial-gradient(circle at 50% 110%, rgba(0,0,0,.35), transparent 60%); }
+  .hero-body { flex: 1; min-width: 0; position: relative; z-index: 1; }
+  .hero-mode { font-size: 30px; font-weight: 700; letter-spacing: -.02em; margin: 4px 0 2px; }
+  .hero-meta { color: var(--muted); margin-bottom: 14px; }
+  .slider-row { display: flex; align-items: center; gap: 12px; margin-top: 18px; max-width: 460px; }
+  .slider-row > span { color: var(--muted); font-size: 13px; width: 66px; flex: none; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); gap: 16px; margin-bottom: 16px; }
+  .tile { padding: 16px 18px; }
+  .tile-l { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; font-weight: 550; }
+  .tile-l svg { width: 16px; height: 16px; }
+  .tile-v { font-size: 24px; font-weight: 700; margin: 6px 0 2px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile-s { color: var(--muted); font-size: 12px; margin-bottom: 8px; min-height: 18px; }
+  .auto-list { display: grid; gap: 8px; }
+  .arow { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 12px; background: var(--surface-2); border: 1px solid transparent; text-decoration: none; transition: border-color .15s; }
+  .arow:hover { border-color: var(--line-2); }
+  .arow.owner { border-color: rgba(52, 211, 153, .4); box-shadow: 0 0 20px -8px rgba(52, 211, 153, .6); }
+  .arow-ic { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; font-size: 20px; background: var(--surface-3); flex: none; }
+  .arow-b { flex: 1; min-width: 0; }
+  .arow-b b { display: block; }
+  .arow-b span { color: var(--muted); font-size: 12.5px; }
+
+  /* ---------- лента ---------- */
+  .modes { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+  .mode { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 16px 10px 12px; border-radius: 14px; cursor: pointer;
+          background: var(--surface-2); border: 1px solid var(--line); color: var(--text); font: inherit; transition: border-color .15s, transform .1s, background .15s; }
+  .mode:hover { border-color: var(--line-2); background: var(--surface-3); }
+  .mode:active { transform: scale(.97); }
+  .mode.active { border-color: var(--a1); background: linear-gradient(160deg, rgba(91,140,255,.14), rgba(164,107,255,.06)); box-shadow: 0 0 0 1px var(--a1) inset; }
+  .mode-prev { width: 42px; height: 42px; border-radius: 50%; --gs: 14px; }
+  .mode-name { font-weight: 600; font-size: 13px; text-align: center; line-height: 1.25; }
+  .mode-id { font-size: 11px; color: var(--dim); }
+  .color-big { display: flex; align-items: center; gap: 16px; }
+  .color-big input[type=color] { width: 84px; height: 84px; }
+  .color-big input[type=color]::-webkit-color-swatch { border-radius: 20px; }
+  .color-big input[type=color]::-moz-color-swatch { border-radius: 20px; }
+  .hex { font: 600 20px ui-monospace, Consolas, monospace; letter-spacing: .02em; }
+  .presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(34px, 1fr)); gap: 8px; margin-top: 16px; }
+  .preset { aspect-ratio: 1; border-radius: 10px; border: 2px solid transparent; cursor: pointer; transition: transform .1s, border-color .15s; padding: 0; }
+  .preset:hover { transform: scale(1.08); border-color: rgba(255,255,255,.5); }
+  .strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(18px, 1fr)); gap: 5px; padding: 14px; background: #090b10;
+           border-radius: 12px; border: 1px solid var(--line); touch-action: none; user-select: none; margin-top: 12px; }
+  .px { aspect-ratio: 1; border-radius: 50%; background: #1b212b; cursor: crosshair; transition: transform .08s; }
+  .px:hover { transform: scale(1.25); }
+
+  /* ---------- автоматика ---------- */
+  .prio-scale { position: relative; height: 52px; border-radius: 10px; background: linear-gradient(90deg, #151a22, #1f2b45); }
+  .pchip { position: absolute; transform: translate(-50%, -50%); padding: 3px 10px; border-radius: 20px; background: var(--surface);
+           border: 1px solid var(--a1); font-size: 12px; font-weight: 550; white-space: nowrap; transition: left .3s; box-shadow: 0 2px 10px rgba(0,0,0,.4); }
+  .ticks { display: flex; justify-content: space-between; font-size: 10px; color: var(--dim); margin-top: 4px; }
+  .autos { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 16px; margin-top: 16px; }
+  .acard { transition: border-color .3s, box-shadow .3s; }
+  .acard.owner { border-color: rgba(52, 211, 153, .5); box-shadow: 0 0 30px -10px rgba(52, 211, 153, .5); }
+  .ac-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .ac-head b { flex: 1; font-size: 16px; }
+  .ac-icon { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; font-size: 19px; background: var(--surface-3); }
+  .ac-empty { text-align: center; padding: 36px 0 28px; }
+  .ac-empty .ac-icon { margin: 0 auto 12px; width: 56px; height: 56px; font-size: 28px; border-radius: 16px; }
+  .grp { border-top: 1px solid var(--line); padding: 14px 0 8px; }
+  .grp-t { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 600; margin-bottom: 8px; }
+  .grp-t .muted { font-weight: 450; font-size: 12.5px; }
+  .big { font-size: 16px; font-weight: 700; color: var(--text); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .chip { padding: 4px 11px; border-radius: 20px; font: inherit; font-size: 12px; font-weight: 550; cursor: pointer;
+          background: var(--surface-2); color: var(--muted); border: 1px solid var(--line-2); transition: .15s; }
+  .chip:hover { color: var(--text); }
+  .chip.sel { background: linear-gradient(135deg, var(--a1), var(--a2)); border-color: transparent; color: #fff; }
+  .trow { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .trow input { flex: 1; }
+  .tl { position: relative; height: 12px; background: var(--surface-3); border-radius: 6px; overflow: hidden; }
+  .tl-seg { position: absolute; top: 0; bottom: 0; background: linear-gradient(90deg, var(--a1), var(--a2)); }
+  .tl-now { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #fff; box-shadow: 0 0 6px #fff; }
+  .ledrow { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; align-items: center; }
+  .swwrap { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 90px; flex: none; text-align: center; font-size: 12px; }
+  .swatch { width: 70px; height: 70px; border-radius: 50%; --gs: 26px; }
+  .ledctl { flex: 1; min-width: 210px; }
+  .ledctl label.f > span:first-child { width: 70px; }
+  .ledctl select { width: 100%; }
+  .lscale { position: relative; height: 26px; border-radius: 8px; margin: 26px 0 24px; }
+  .ls-hyst { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(45deg, rgba(255,255,255,.2) 0 4px, transparent 4px 8px); }
+  .ls-mark { position: absolute; top: -5px; bottom: -5px; width: 3px; margin-left: -1px; border-radius: 2px; transition: left .2s; }
+  .ls-mark.dark { background: #a393ff; } .ls-mark.light { background: #f5c542; }
+  .ls-mark span { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); font-size: 12px; margin-top: 3px; }
+  .ls-now { position: absolute; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: #fff;
+            border: 3px solid var(--ok); box-shadow: 0 0 12px var(--ok); transition: left .6s; }
+  .ls-now span { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .savebar { position: sticky; bottom: 16px; z-index: 5; margin-top: 16px; padding: 12px 16px; border-radius: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+             background: rgba(24, 29, 38, .9); backdrop-filter: blur(12px); border: 1px solid var(--line-2); box-shadow: 0 10px 30px rgba(0,0,0,.4); transition: border-color .2s; }
+  .savebar.dirty { border-color: rgba(251, 191, 36, .45); }
+  .savebar .sb-t { flex: 1; min-width: 180px; color: var(--muted); font-size: 13px; }
+
+  /* ---------- эффекты ---------- */
+  .fx-grid { grid-template-columns: minmax(240px, 1fr) minmax(0, 2.2fr); }
+  .list { display: grid; gap: 4px; margin-top: 12px; }
+  .li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; cursor: pointer; border: 1px solid transparent; }
+  .li:hover { background: var(--surface-2); }
+  .li.active { background: var(--surface-2); border-color: var(--line-2); }
+  .li-ic { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; background: rgba(91,140,255,.12); color: #9db8ff; flex: none; }
+  .li-b { flex: 1; min-width: 0; }
+  .li-b b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+  .li-b span { color: var(--muted); font-size: 12px; }
+  .empty { text-align: center; color: var(--muted); padding: 28px 10px; }
+
+  /* ---------- сеть ---------- */
+  .net-hero { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
+  .net-ic { width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center; background: linear-gradient(135deg, rgba(91,140,255,.2), rgba(164,107,255,.15)); color: #aac2ff; }
+  .net-ic svg { width: 28px; height: 28px; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; margin-top: 14px; font-size: 13.5px; }
+  .kv > span:nth-child(odd) { color: var(--muted); }
+  .kv > span:nth-child(even) { font-weight: 550; word-break: break-all; }
+  .pw { display: flex; gap: 6px; flex: 1; }
+  .pw input { flex: 1; }
+  .scan-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; cursor: pointer; }
+  .scan-row:hover { background: var(--surface-2); }
+  .scan-row b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
+  .sig { display: flex; align-items: flex-end; gap: 2px; height: 16px; }
+  .sig i { width: 4px; border-radius: 1px; background: var(--line-2); }
+  .sig i.f { background: var(--ok); }
+
+  /* ---------- система / лог ---------- */
+  .mem { margin: 14px 0; }
+  .mem-h { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; }
+  .mem-h span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .console { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; }
+  #log { max-height: 440px; overflow: auto; margin-top: 12px; font: 12px/1.5 ui-monospace, Consolas, monospace; }
+  #log details { border-top: 1px solid var(--line); padding: 6px 2px; }
+  #log summary { cursor: pointer; list-style: none; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  #log summary::-webkit-details-marker { display: none; }
+  #log pre { margin-top: 6px; }
+  .m { font-weight: 700; min-width: 50px; }
+  .m.GET { color: #7dd3fc; } .m.POST { color: #c4b5fd; } .m.DELETE { color: #fca5a5; }
+  .st-ok { color: var(--ok); font-weight: 700; } .st-err { color: var(--err); font-weight: 700; }
+  .danger-zone { border-color: rgba(248, 113, 113, .25); }
+
+  /* ---------- оверлеи ---------- */
+  .modal, .overlay { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px;
+                     background: rgba(5, 7, 10, .7); backdrop-filter: blur(6px); animation: fadein .15s ease; }
+  .modal-box { width: min(420px, 100%); background: var(--surface); border: 1px solid var(--line-2); border-radius: 18px; padding: 22px;
+               box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+  .modal-box h3 { font-size: 17px; margin-bottom: 8px; }
+  .modal-box p { color: var(--muted); margin: 0 0 20px; }
+  .modal-box .row { justify-content: flex-end; }
+  .overlay { text-align: center; }
+  .overlay h3 { font-size: 20px; margin: 22px 0 6px; }
+  .overlay p { color: var(--muted); max-width: 380px; margin: 0 auto; }
+  .spinner { width: 64px; height: 64px; margin: 0 auto; border-radius: 50%; border: 4px solid var(--line-2); border-top-color: var(--a1); border-right-color: var(--a2); animation: spin .9s linear infinite; }
+  #toasts { position: fixed; right: 20px; bottom: 20px; z-index: 60; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; pointer-events: none; }
+  .toast { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-radius: 12px; max-width: 380px;
+           background: rgba(30, 36, 48, .96); border: 1px solid var(--line-2); box-shadow: 0 10px 30px rgba(0,0,0,.45);
+           transform: translateY(10px); opacity: 0; transition: .25s; }
+  .toast.show { transform: none; opacity: 1; }
+  .toast.ok svg { color: var(--ok); } .toast.err svg { color: var(--err); } .toast.warn svg { color: var(--warn); }
+
+  /* ---------- телефон ---------- */
+  @media (max-width: 880px) {
+    .sidebar { inset: auto 0 0 0; width: auto; height: calc(64px + env(safe-area-inset-bottom)); padding: 0 4px env(safe-area-inset-bottom);
+               flex-direction: row; border-right: none; border-top: 1px solid var(--line); background: rgba(13, 16, 22, .92); }
+    .logo, .side-foot { display: none; }
+    .nav-list { flex-direction: row; flex: 1; gap: 0; }
+    .nav { flex: 1; flex-direction: column; gap: 3px; padding: 9px 0 6px; font-size: 10.5px; border-radius: 12px; }
+    .nav.active { background: none; }
+    .nav.active::before { left: 30%; right: 30%; top: 0; bottom: auto; width: auto; height: 3px; border-radius: 0 0 3px 3px; }
+    .nav .dotmark { position: absolute; top: 8px; right: calc(50% - 16px); margin: 0; }
+    .topbar { display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 9; padding: 10px 16px;
+              background: rgba(11, 14, 19, .85); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
+    .topbar .logo-dot { width: 22px; height: 22px; }
+    .topbar .logo-dot::after { inset: 5px; }
+    .topbar b { flex: 1; font-size: 16px; }
+    .topbar .muted { font-size: 12px; }
+    main { margin-left: 0; padding: 18px 16px calc(90px + env(safe-area-inset-bottom)); }
+    h1 { font-size: 22px; }
+    .grid, .fx-grid { grid-template-columns: minmax(0, 1fr); }
+    .hero { flex-direction: column; text-align: center; padding: 24px 18px; gap: 20px; }
+    .hero .row { justify-content: center; }
+    .slider-row { margin-left: auto; margin-right: auto; }
+    .hero-mode { font-size: 26px; }
+    .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .tile { padding: 14px; }
+    .tile-v { font-size: 20px; }
+    #toasts { left: 16px; right: 16px; bottom: calc(76px + env(safe-area-inset-bottom)); align-items: stretch; }
+    .toast { max-width: none; }
+    .savebar { bottom: calc(76px + env(safe-area-inset-bottom)); }
+    .console { grid-template-columns: auto 1fr; }
+    .console button { grid-column: 1 / -1; }
+  }
+</style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="logo"><span class="logo-dot"></span><div>WebLed<small>контроллер</small></div></div>
+  <nav class="nav-list">
+    <a class="nav" href="#/home" data-nav="home"><i data-ic="home"></i><span>Обзор</span></a>
+    <a class="nav" href="#/led" data-nav="led"><i data-ic="bulb"></i><span>Лента</span></a>
+    <a class="nav" href="#/auto" data-nav="auto"><i data-ic="zap"></i><span>Автоматика</span><em class="dotmark" id="navDirty" hidden></em></a>
+    <a class="nav" href="#/fx" data-nav="fx"><i data-ic="code"></i><span>Эффекты</span></a>
+    <a class="nav" href="#/net" data-nav="net"><i data-ic="wifi"></i><span>Сеть</span></a>
+    <a class="nav" href="#/sys" data-nav="sys"><i data-ic="chip"></i><span>Система</span></a>
+  </nav>
+  <div class="side-foot">
+    <span class="conn">подключение…</span>
+    <span id="sideTime">—</span>
+    <span id="sideUpd"></span>
+  </div>
+</aside>
+
+<header class="topbar">
+  <span class="logo-dot"></span><b>WebLed</b>
+  <span class="muted" id="topTime"></span>
+  <span class="conn"></span>
+</header>
+
+<main>
+
+<!-- ================= ОБЗОР ================= -->
+<section class="page" id="p-home" hidden>
+  <div class="ph">
+    <div><h1>Обзор</h1><p>Что происходит с устройством прямо сейчас</p></div>
+    <div class="ph-act"><button class="btn icon" onclick="refreshAll(this)" title="Обновить"><i data-ic="refresh"></i></button></div>
+  </div>
+
+  <div class="card hero">
+    <div class="orb-wrap"><div class="orb prev" id="hOrb"></div></div>
+    <div class="hero-body">
+      <div class="eyebrow">Сейчас на ленте</div>
+      <div class="hero-mode" id="hMode">—</div>
+      <div class="hero-meta" id="hMeta"></div>
+      <div class="row">
+        <button class="btn primary" id="hPower" onclick="togglePower()"><i data-ic="power"></i><span>Выключить</span></button>
+        <button class="btn" id="hManual" onclick="setManual(!ledInfo.settings.manual)"><i data-ic="hand"></i><span>Ручное управление</span></button>
+        <a class="btn ghost" href="#/led">Настроить <i data-ic="arrow"></i></a>
+      </div>
+      <label class="slider-row"><span>Яркость</span><input type="range" id="hBright" min="1" max="255"><b class="val" id="hBrightV"></b></label>
+    </div>
+  </div>
+
+  <div class="tiles">
+    <div class="card tile"><div class="tile-l"><i data-ic="clock"></i>Время устройства</div><div class="tile-v" id="tTime">—</div><div class="tile-s" id="tTimeS"></div></div>
+    <div class="card tile"><div class="tile-l"><i data-ic="temp"></i>Температура CPU</div><div class="tile-v" id="tTemp">—</div><div class="tile-s">допустимо до 80 °C</div><div class="bar" id="tTempBar"><i></i></div></div>
+    <div class="card tile"><div class="tile-l"><i data-ic="chip"></i>Память IRAM</div><div class="tile-v" id="tIram">—</div><div class="tile-s" id="tIramS"></div><div class="bar"><i id="tIramBar"></i></div></div>
+    <div class="card tile"><div class="tile-l"><i data-ic="sun"></i>Датчик света</div><div class="tile-v" id="tLight">—</div><div class="tile-s" id="tLightS"></div><div class="bar"><i id="tLightBar"></i></div></div>
+    <div class="card tile"><div class="tile-l"><i data-ic="wifi"></i>Сеть</div><div class="tile-v" id="tNet">—</div><div class="tile-s" id="tNetS"></div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-h"><h3>Автоматика</h3><a href="#/auto">Настроить →</a></div>
+    <div class="auto-list" id="hAutos"></div>
+  </div>
+</section>
+
+<!-- ================= ЛЕНТА ================= -->
+<section class="page" id="p-led" hidden>
+  <div class="ph">
+    <div><h1>Лента</h1><p>Режим, цвет, яркость и попиксельная раскраска</p></div>
+    <div class="ph-act">
+      <label class="swrow" style="margin:0 8px 0 0"><span class="muted small">Сразу применять</span><span class="sw"><input type="checkbox" id="ledLive" checked><span></span></span></label>
+      <button class="btn icon" onclick="refreshBtn(this, loadLed)" title="Обновить"><i data-ic="refresh"></i></button>
+    </div>
+  </div>
+
+  <div class="banner warn" id="ledBanner" hidden>
+    <i data-ic="alert"></i><span>Лентой сейчас управляет автоматика — ручные изменения будут отклонены.</span>
+    <button class="btn sm" onclick="setManual(true)">Взять управление</button>
+  </div>
+  <div class="banner info" id="ledManualBanner" hidden>
+    <i data-ic="hand"></i><span>Включено ручное управление — автоматика на паузе.</span>
+    <button class="btn sm" onclick="setManual(false)">Вернуть автоматике</button>
+  </div>
+
+  <div class="grid">
+    <div class="card span2">
+      <div class="card-h"><h3>Режим</h3><span class="muted small" id="modeCount"></span></div>
+      <div class="modes" id="modeGrid"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><h3>Цвет</h3></div>
+      <div class="color-big">
+        <input type="color" id="ledColor">
+        <div><div class="hex" id="ledHex">#000000</div><div class="muted" id="ledRgb"></div></div>
+      </div>
+      <div class="presets" id="presets"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><h3>Параметры</h3></div>
+      <label class="f"><span>Яркость</span><input type="range" id="ledBright" min="1" max="255"><b class="val" id="ledBrightV"></b></label>
+      <label class="f"><span>Скорость</span><input type="range" id="ledSpeed" min="0" max="255"><b class="val" id="ledSpeedV"></b></label>
+      <p class="muted small">Скорость влияет на анимированные режимы. При выключенном «Сразу применять» изменения уходят по кнопке.</p>
+      <div class="row between mt">
+        <button class="btn" onclick="togglePower()"><i data-ic="power"></i><span id="ledPowerT">Выключить</span></button>
+        <button class="btn primary" onclick="applyState()"><i data-ic="check"></i>Применить</button>
+      </div>
+    </div>
+
+    <div class="card span2">
+      <div class="card-h"><h3>Попиксельно</h3><span class="muted small" id="pxInfo"></span></div>
+      <div class="row">
+        <input type="color" id="brush" value="#ff3d7f" style="width:44px;height:38px" title="Кисть">
+        <button class="btn sm" onclick="pxFill()">Залить</button>
+        <button class="btn sm" onclick="pxGradient()">Радуга</button>
+        <button class="btn sm" onclick="pxClear()">Погасить</button>
+        <button class="btn sm ghost" onclick="pxReset()">Сбросить</button>
+        <span style="flex:1"></span>
+        <button class="btn primary sm" id="pxSend" onclick="sendPixels()"><i data-ic="send"></i>Отправить на ленту</button>
+      </div>
+      <div class="strip" id="strip"></div>
+      <p class="muted small">Нажмите или проведите по светодиодам, чтобы раскрасить их кистью. Отправляются только раскрашенные, пачками по 80. Лента переключится в режим 253 «Ручной».</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= АВТОМАТИКА ================= -->
+<section class="page" id="p-auto" hidden>
+  <div class="ph">
+    <div><h1>Автоматика</h1><p>Кто и когда управляет лентой без вас</p></div>
+    <div class="ph-act"><button class="btn icon" onclick="refreshBtn(this, loadConfig)" title="Перечитать с устройства"><i data-ic="refresh"></i></button></div>
+  </div>
+
+  <div id="autoSec">
+    <div class="card">
+      <div class="card-h"><h3>Приоритет</h3><span class="muted small" id="prioText"></span></div>
+      <div class="prio-scale" id="prioScale"></div>
+      <div class="ticks"><span>0</span><span>64</span><span>128</span><span>192</span><span>255</span></div>
+    </div>
+    <div class="autos">
+      <div class="card acard" id="ac-button"></div>
+      <div class="card acard" id="ac-light_sensor"></div>
+    </div>
+    <div class="savebar" id="saveBar">
+      <span class="sb-t" id="sbText">Изменений нет</span>
+      <button class="btn ghost" onclick="resetConfig()">Отменить</button>
+      <button class="btn primary" id="sbSave" onclick="saveConfig()"><i data-ic="check"></i>Сохранить и перезагрузить</button>
+    </div>
+    <details class="card mt" id="cfgDetails">
+      <summary class="muted" style="cursor:pointer">JSON для отладки</summary>
+      <textarea id="cfgText" class="code mt" spellcheck="false" style="min-height:220px"></textarea>
+      <div class="row mt"><button class="btn sm" onclick="jsonToFields()">Применить JSON в поля</button></div>
+    </details>
+  </div>
+</section>
+
+<!-- ================= ЭФФЕКТЫ ================= -->
+<section class="page" id="p-fx" hidden>
+  <div class="ph">
+    <div><h1>Эффекты</h1><p>Скрипты, которые компилируются на устройстве и становятся режимами</p></div>
+    <div class="ph-act">
+      <button class="btn" onclick="newFile()"><i data-ic="plus"></i>Новый</button>
+      <button class="btn icon" onclick="refreshBtn(this, loadFiles)" title="Обновить"><i data-ic="refresh"></i></button>
+    </div>
+  </div>
+  <div class="grid fx-grid">
+    <div class="card">
+      <div class="card-h"><h3>Файлы</h3><span class="muted small" id="fsInfo"></span></div>
+      <div class="bar"><i id="fsBar"></i></div>
+      <div class="list" id="fileList"></div>
+    </div>
+    <div class="card">
+      <div class="card-h"><h3 id="fxTitle">Новый эффект</h3><span class="badge" id="fxState"></span></div>
+      <div class="row">
+        <input type="text" id="fName" placeholder="имя файла" style="flex:2;min-width:140px">
+        <input type="number" id="fId" min="0" max="255" value="10" class="num" title="id эффекта">
+        <label class="swrow" style="margin:0"><span class="muted small">анимированный</span><span class="sw"><input type="checkbox" id="fCont" checked><span></span></span></label>
+      </div>
+      <textarea id="fText" class="code mt" spellcheck="false" placeholder="// текст скрипта"></textarea>
+      <div class="row between mt">
+        <button class="btn danger" id="fxDel" onclick="deleteFile($('fName').value)" hidden><i data-ic="trash"></i>Удалить</button>
+        <span style="flex:1"></span>
+        <button class="btn primary" onclick="saveFile()"><i data-ic="play"></i>Сохранить и скомпилировать</button>
+      </div>
+      <p class="muted small">id — номер режима, под которым эффект появится на вкладке «Лента». Ошибки компиляции видны только в логе ESP.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= СЕТЬ ================= -->
+<section class="page" id="p-net" hidden>
+  <div class="ph">
+    <div><h1>Сеть</h1><p>Подключение Wi-Fi и точка доступа</p></div>
+    <div class="ph-act"><button class="btn icon" onclick="refreshBtn(this, loadNet)" title="Обновить"><i data-ic="refresh"></i></button></div>
+  </div>
+  <div class="grid">
+    <div class="card">
+      <div class="net-hero">
+        <div class="net-ic"><i data-ic="wifi"></i></div>
+        <div><div class="eyebrow">Текущий режим</div><div class="hero-mode" style="font-size:24px;margin:0" id="nMode">—</div></div>
+      </div>
+      <div class="kv" id="nKv"></div>
+    </div>
+    <div class="card">
+      <div class="card-h"><h3>Сменить подключение</h3>
+        <div class="seg" id="netSeg"><button data-seg="sta" class="active">Клиент</button><button data-seg="ap">Точка доступа</button></div></div>
+      <label class="f"><span>SSID</span><input type="text" id="netSsid" placeholder="имя сети"></label>
+      <label class="f"><span>Пароль</span><span class="pw"><input type="password" id="netPass" placeholder="пароль"><button class="btn icon" onclick="togglePw('netPass', this)" title="Показать"><i data-ic="eye"></i></button></span></label>
+      <p class="muted small" id="netHint">Устройство подключится к роутеру. После перезагрузки оно может получить новый IP.</p>
+      <div class="row between">
+        <span></span>
+        <button class="btn primary" onclick="applyNet()"><i data-ic="check"></i>Применить и перезагрузить</button>
+      </div>
+    </div>
+    <div class="card span2">
+      <div class="card-h"><h3>Сети рядом</h3><button class="btn sm" id="scanBtn" onclick="scanNet()"><i data-ic="refresh"></i>Сканировать</button></div>
+      <div id="scanList"><div class="empty">Нажмите «Сканировать» — поиск занимает пару секунд.</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= СИСТЕМА ================= -->
+<section class="page" id="p-sys" hidden>
+  <div class="ph">
+    <div><h1>Система</h1><p>Ресурсы, настройки ленты и отладка API</p></div>
+    <div class="ph-act"><button class="btn icon" onclick="refreshBtn(this, loadInfo)" title="Обновить"><i data-ic="refresh"></i></button></div>
+  </div>
+  <div class="grid">
+    <div class="card">
+      <div class="card-h"><h3>Устройство</h3><span class="badge" id="sTemp"></span></div>
+      <div class="kv" style="margin-top:0" id="sKv"></div>
+      <div class="mem"><div class="mem-h"><span>IRAM</span><span id="sIram"></span></div><div class="bar"><i id="sIramBar"></i></div></div>
+      <div class="mem"><div class="mem-h"><span>PSRAM</span><span id="sPsram"></span></div><div class="bar"><i id="sPsramBar"></i></div></div>
+    </div>
+    <div class="card">
+      <div class="card-h"><h3>Настройки ленты</h3></div>
+      <label class="f"><span>Светодиодов</span><input type="number" id="ledCount" min="1"></label>
+      <div class="swrow"><span><b>Запоминать состояние</b><br><span class="muted small">save_mode — после перезагрузки лента вернётся в последний режим</span></span><span class="sw"><input type="checkbox" id="ledSave"><span></span></span></div>
+      <div class="row between mt"><span></span><button class="btn primary" onclick="applySettings()"><i data-ic="check"></i>Сохранить</button></div>
+    </div>
+    <div class="card">
+      <div class="card-h"><h3>Обновление данных</h3><span class="muted small" id="stAt"></span></div>
+      <div class="swrow"><span><b>Опрашивать state</b><br><span class="muted small">каждые 30 секунд, пока вкладка открыта</span></span><span class="sw"><input type="checkbox" id="stAuto" checked><span></span></span></div>
+      <details class="mt"><summary class="muted small" style="cursor:pointer">Последний ответ /api/device?state</summary><pre id="stRaw" class="mt">—</pre></details>
+    </div>
+    <div class="card danger-zone">
+      <div class="card-h"><h3>Перезагрузка</h3></div>
+      <p class="muted">Перезапуск контроллера. Страница сама дождётся, пока устройство вернётся в сеть.</p>
+      <button class="btn danger" onclick="restart()"><i data-ic="power"></i>Перезагрузить устройство</button>
+    </div>
+    <div class="card span2">
+      <div class="card-h"><h3>API-консоль</h3><button class="btn sm ghost" onclick="$('log').innerHTML=''">Очистить лог</button></div>
+      <div class="console">
+        <select id="rawMethod"><option>GET</option><option>POST</option><option>DELETE</option></select>
+        <input type="text" id="rawUrl" value="/api/led">
+        <button class="btn primary" onclick="sendRaw()"><i data-ic="send"></i>Отправить</button>
+      </div>
+      <textarea id="rawBody" class="code mt" style="min-height:70px" placeholder='тело запроса для POST, например {"state":{"mode":254}}'></textarea>
+      <div id="log"></div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-box">
+    <h3 id="mTitle"></h3>
+    <p id="mText"></p>
+    <div class="row"><button class="btn ghost" id="mCancel">Отмена</button><button class="btn primary" id="mOk">OK</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="reboot" hidden>
+  <div>
+    <div class="spinner"></div>
+    <h3 id="rbTitle">Перезагрузка</h3>
+    <p id="rbText">Ждём, пока устройство вернётся в сеть…</p>
+    <p class="small mt" id="rbNote"></p>
+    <button class="btn mt" id="rbClose" onclick="$('reboot').hidden = true" hidden>Закрыть</button>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+let modes = [];
+let ledInfo = null, lastState = null, lastInfo = null, netInfo = null;
+let booted = false;
+
+// ---------- иконки ----------
+const ICONS = {
+  home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+  bulb: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1.1 1.3 1.1 2.1V16h5v-.1c0-.8.5-1.6 1.1-2.1A6 6 0 0 0 12 3z"/>',
+  zap: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+  code: '<path d="m8 6-6 6 6 6M16 6l6 6-6 6M14 4l-4 16"/>',
+  wifi: '<path d="M2 8.8a15 15 0 0 1 20 0M5 12.4a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1" fill="currentColor"/>',
+  chip: '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>',
+  refresh: '<path d="M21 12a9 9 0 1 1-2.6-6.4L21 8M21 3v5h-5"/>',
+  power: '<path d="M12 2v9M18.4 6.6a9 9 0 1 1-12.8 0"/>',
+  hand: '<path d="M18 11V6a2 2 0 0 0-4 0M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8a8 8 0 0 0 16 0v-3a2 2 0 0 0-4 0"/>',
+  arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  temp: '<path d="M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0z"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  alert: '<path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>',
+  send: '<path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  trash: '<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>',
+  play: '<path d="m7 4 13 8-13 8z"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  file: '<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5"/>'
+};
+const svg = n => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[n] || ''}</svg>`;
+function icons(root = document) { $$('i[data-ic]', root).forEach(el => { if (!el.firstChild) el.innerHTML = svg(el.dataset.ic); }); }
+
+// ---------- утилиты ----------
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+const hex = (r, g, b) => '#' + [r, g, b].map(v => (v | 0).toString(16).padStart(2, '0')).join('');
+const rgb = h => ({ r: parseInt(h.substr(1, 2), 16), g: parseInt(h.substr(3, 2), 16), b: parseInt(h.substr(5, 2), 16) });
+const clone = o => JSON.parse(JSON.stringify(o));
+function fmtBytes(n) {
+  if (n == null) return '—';
+  if (n >= 1048576) return (n / 1048576).toFixed(2) + ' МБ';
+  if (n >= 1024) return (n / 1024).toFixed(1) + ' КБ';
+  return n + ' Б';
+}
+function store(k, v) { try { localStorage.setItem('webled.' + k, v); } catch (e) { } }
+function recall(k) { try { return localStorage.getItem('webled.' + k); } catch (e) { return null; } }
+
+// заливка ползунка до текущего значения
+function paint(el) { el.style.setProperty('--p', ((el.value - el.min) / ((el.max - el.min) || 1) * 100) + '%'); }
+function paintAll(root = document) { $$('input[type=range]', root).forEach(paint); }
+document.addEventListener('input', e => { if (e.target.type === 'range') paint(e.target); });
+// ставим значение, только если пользователь сейчас не держит этот контрол
+function setVal(el, v) { if (el && el !== document.activeElement) { el.value = v; if (el.type === 'range') paint(el); } }
+
+function toast(msg, type = 'ok') {
+  if (type === true) type = 'err';
+  const t = document.createElement('div');
+  t.className = 'toast ' + type;
+  t.innerHTML = `<i data-ic="${type === 'ok' ? 'check' : 'alert'}"></i><span>${esc(msg)}</span>`;
+  icons(t);
+  $('toasts').append(t);
+  requestAnimationFrame(() => t.classList.add('show'));
+  setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 3400);
+}
+
+// своё модальное окно вместо confirm()
+function ask(title, text, okLabel = 'Подтвердить', danger = false) {
+  if (!$('modal').hidden) return Promise.resolve(false);
+  return new Promise(res => {
+    $('mTitle').textContent = title;
+    $('mText').textContent = text;
+    const ok = $('mOk');
+    ok.textContent = okLabel;
+    ok.className = 'btn ' + (danger ? 'danger-solid' : 'primary');
+    $('modal').hidden = false;
+    const done = v => { $('modal').hidden = true; ok.onclick = $('mCancel').onclick = $('modal').onclick = null; res(v); };
+    ok.onclick = () => done(true);
+    $('mCancel').onclick = () => done(false);
+    $('modal').onclick = e => { if (e.target.id === 'modal') done(false); };
+    ok.focus();
+  });
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modal').hidden) $('mCancel').click(); });
+
+function setOnline(on) {
+  $$('.conn').forEach(el => {
+    el.className = 'conn ' + (on ? 'on' : 'off');
+    el.textContent = on ? 'в сети' : 'нет связи';
+  });
+}
+
+// ---------- API ----------
+// Все запросы идут через api(): таймаут, разбор JSON/текста, запись в лог
+async function api(method, url, body, timeoutMs = 10000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const opts = { method, signal: ctrl.signal };
+  if (body !== undefined) {
+    opts.headers = { 'Content-Type': 'application/json' };
+    opts.body = typeof body === 'string' ? body : JSON.stringify(body);
+  }
+  const t0 = performance.now();
+  let status = 0, text = '', data = null;
+  try {
+    const r = await fetch(url, opts);
+    status = r.status;
+    text = await r.text();
+    try { data = JSON.parse(text); } catch (e) { data = null; }
+  } catch (e) {
+    text = e.name === 'AbortError' ? 'таймаут' : String(e);
+  } finally {
+    clearTimeout(timer);
+  }
+  const ms = Math.round(performance.now() - t0);
+  const ok = status >= 200 && status < 300 && !(data && data.status === false);
+  setOnline(status > 0);
+  logEntry(method, url, opts.body, status, ms, text, ok);
+  return { ok, status, data, text };
+}
+
+function logEntry(method, url, reqBody, status, ms, text, ok) {
+  const d = document.createElement('details');
+  const short = text.replace(/\s+/g, ' ');
+  d.innerHTML =
+    `<summary><span class="muted">${new Date().toLocaleTimeString()}</span><span class="m ${method}">${method}</span>${esc(url)}` +
+    `<span class="${ok ? 'st-ok' : 'st-err'}">${status || 'ERR'}</span><span class="muted">${ms} мс</span>` +
+    `<span class="muted" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(short.slice(0, 140))}</span></summary>` +
+    (reqBody ? `<pre>→ ${esc(reqBody)}</pre>` : '') + `<pre>← ${esc(text)}</pre>`;
+  $('log').prepend(d);
+  while ($('log').children.length > 150) $('log').lastChild.remove();
+}
+
+function errText(r) {
+  if (r.data && r.data.error) return r.data.error;
+  return (r.status || 'нет связи') + (r.data ? '' : ' ' + r.text);
+}
+
+async function refreshBtn(btn, fn) {
+  btn.classList.add('spin');
+  try { await fn(); } finally { btn.classList.remove('spin'); }
+}
+function refreshAll(btn) { return refreshBtn(btn, async () => { await loadLed(); await loadState(); await loadInfo(); }); }
+
+// ждём, пока устройство поднимется после перезагрузки
+async function waitReboot(note) {
+  $('rbTitle').textContent = 'Перезагрузка';
+  $('rbText').textContent = 'Ждём, пока устройство вернётся в сеть…';
+  $('rbNote').textContent = note || '';
+  $('rbClose').hidden = true;
+  $('reboot').hidden = false;
+  await sleep(4000);
+  const t0 = Date.now();
+  while (Date.now() - t0 < 60000) {
+    try {
+      const c = new AbortController(), h = setTimeout(() => c.abort(), 2500);
+      const r = await fetch('/api/led', { signal: c.signal });
+      clearTimeout(h);
+      if (r.ok) {
+        $('reboot').hidden = true;
+        setOnline(true);
+        toast('Устройство снова в сети');
+        await boot();
+        return;
+      }
+    } catch (e) { }
+    await sleep(2000);
+  }
+  setOnline(false);
+  $('rbTitle').textContent = 'Устройство не отвечает';
+  $('rbText').textContent = 'За 60 секунд ответа не было. Если менялась сеть — откройте устройство по новому адресу.';
+  $('rbClose').hidden = false;
+}
+
+// ---------- режимы и превью ----------
+function modeName(id) {
+  const m = modes.find(x => x.id_mode === id);
+  return m ? m.name : 'Режим ' + id;
+}
+function modeOptions(sel) {
+  let html = modes.map(x => `<option value="${x.id_mode}" ${x.id_mode === sel ? 'selected' : ''}>${x.id_mode} — ${esc(x.name)}</option>`).join('');
+  if (sel != null && !modes.some(x => x.id_mode === sel)) html += `<option value="${sel}" selected>${sel} — нет на устройстве</option>`;
+  return html;
+}
+// раскрашивает кружок-превью (.prev) под режим: радуга крутится, скрипты пульсируют, 255 — погашен
+function applyPreview(el, mode, c, bright = 255, speed = 128) {
+  const name = modeName(mode), f = Math.max(.18, bright / 255);
+  const col = `rgb(${Math.round(c.r * f)},${Math.round(c.g * f)},${Math.round(c.b * f)})`;
+  el.classList.remove('rainbow', 'pulse', 'off', 'pix');
+  el.style.background = '';
+  el.style.setProperty('--glow', 'transparent');
+  if (mode === 255) el.classList.add('off');
+  else if (/радуг|rainbow/i.test(name)) { el.classList.add('rainbow'); el.style.setProperty('--glow', 'rgba(150,110,255,.55)'); }
+  else if (mode === 253) { el.classList.add('pix'); el.style.setProperty('--glow', 'rgba(91,140,255,.45)'); }
+  else {
+    el.style.background = col;
+    el.style.setProperty('--glow', col);
+    if (mode !== 254) el.classList.add('pulse');
+  }
+  el.style.setProperty('--dur', (3.5 - speed / 255 * 3).toFixed(2) + 's');
+  return col;
+}
+
+// ---------- лента ----------
+const PRESETS = ['#ffb46b', '#fff4e0', '#ffffff', '#ff2d2d', '#ff7a00', '#ffd400', '#9dff00', '#22e06b', '#00e5ff', '#2f6bff', '#6b3dff', '#b43dff', '#ff3dbb', '#ff6b8b'];
+$('presets').innerHTML = PRESETS.map(c => `<button class="preset" style="background:${c}" data-c="${c}" title="${c}"></button>`).join('');
+
+async function loadLed() {
+  const r = await api('GET', '/api/led');
+  if (!r.data) return toast('Лента: ' + errText(r), 'err');
+  ledInfo = r.data;
+  ledInfo.settings = ledInfo.settings || {};
+  ledInfo.state = ledInfo.state || { mode: 255, speed: 0, brightness: 0, color: { r: 0, g: 0, b: 0 } };
+  modes = ledInfo.modes || [];
+  renderLed();
+  renderHome();
+  renderSys();
+  if (cfgOrig) {
+    $$('#autoSec select[data-k]').forEach(s => s.innerHTML = modeOptions(getPath(cfg, s.dataset.k)));
+    updateAuto();
+  }
+}
+
+function hasAutomations() {
+  return !!(lastState && (lastState.button || lastState.light_sensor)) || !!(cfgOrig && (cfgOrig.button || cfgOrig.light_sensor));
+}
+
+function renderLed() {
+  if (!ledInfo) return;
+  const s = ledInfo.state, manual = !!ledInfo.settings.manual;
+  $('ledBanner').hidden = manual || !hasAutomations();
+  $('ledManualBanner').hidden = !manual;
+
+  $('modeCount').textContent = modes.length + ' шт.';
+  $('modeGrid').innerHTML = modes.map(m =>
+    `<button class="mode ${m.id_mode === s.mode ? 'active' : ''}" data-mode="${m.id_mode}">
+       <span class="mode-prev prev" data-mp="${m.id_mode}"></span>
+       <span class="mode-name">${esc(m.name)}</span><span class="mode-id">#${m.id_mode}</span></button>`).join('');
+  $$('[data-mp]').forEach(el => applyPreview(el, +el.dataset.mp, s.color, 255, s.speed));
+
+  const h = hex(s.color.r, s.color.g, s.color.b);
+  setVal($('ledColor'), h);
+  $('ledHex').textContent = h.toUpperCase();
+  $('ledRgb').textContent = `R ${s.color.r} · G ${s.color.g} · B ${s.color.b}`;
+  setVal($('ledBright'), s.brightness); $('ledBrightV').textContent = Math.round(s.brightness / 2.55) + '%';
+  setVal($('ledSpeed'), s.speed); $('ledSpeedV').textContent = s.speed;
+  $('ledPowerT').textContent = s.mode === 255 ? 'Включить' : 'Выключить';
+  buildStrip();
+}
+
+let last409 = 0;
+// POST /api/led с обработкой 409: предлагаем включить ручное управление и повторяем запрос
+async function postLed(body, quiet = false) {
+  let r = await api('POST', '/api/led', body);
+  if (r.status === 409) {
+    if (quiet) {
+      if (Date.now() - last409 > 3000) { last409 = Date.now(); toast('Лентой управляет автоматика — включите ручное управление', 'warn'); }
+      return r;
+    }
+    const yes = await ask('Лентой управляет автоматика',
+      'Чтобы менять ленту вручную, нужно включить ручное управление. Автоматика встанет на паузу, пока вы его не выключите.',
+      'Включить и применить');
+    if (yes) {
+      r = await api('POST', '/api/led', Object.assign({}, body, { settings: Object.assign({}, body.settings, { manual: true }) }));
+      if (r.ok) { ledInfo.settings.manual = true; loadState(); }
+    }
+  } else if (!r.ok) toast('Лента: ' + errText(r), 'err');
+  return r;
+}
+
+// изменения с контролов копим и отправляем одним запросом раз в 200 мс
+let pend = {}, pendT = null;
+function queueState(part, force) {
+  Object.assign(ledInfo.state, part);
+  renderLed(); renderHome();
+  if (!force && !$('ledLive').checked) return;
+  Object.assign(pend, part);
+  clearTimeout(pendT);
+  pendT = setTimeout(() => { const b = { state: pend }; pend = {}; postLed(b, true); }, 200);
+}
+
+$('modeGrid').addEventListener('click', async e => {
+  const b = e.target.closest('[data-mode]');
+  if (!b) return;
+  const id = +b.dataset.mode;
+  const r = await postLed({ state: { mode: id } });
+  if (r.ok) { ledInfo.state.mode = id; renderLed(); renderHome(); }
+});
+$('ledColor').addEventListener('input', e => queueState({ color: rgb(e.target.value) }));
+$('ledBright').addEventListener('input', e => queueState({ brightness: +e.target.value }));
+$('ledSpeed').addEventListener('input', e => queueState({ speed: +e.target.value }));
+$('hBright').addEventListener('input', e => queueState({ brightness: +e.target.value }, true));
+$('presets').addEventListener('click', e => {
+  const b = e.target.closest('[data-c]');
+  if (b) queueState({ color: rgb(b.dataset.c) }, true);
+});
+
+async function applyState() {
+  const s = ledInfo.state;
+  const r = await postLed({ state: { mode: s.mode, speed: s.speed, brightness: s.brightness, color: s.color } });
+  if (r.ok) toast('Применено');
+}
+
+async function togglePower() {
+  const s = ledInfo.state;
+  if (s.mode !== 255) store('lastMode', s.mode);
+  const target = s.mode === 255 ? (+recall('lastMode') || 254) : 255;
+  const r = await postLed({ state: { mode: target } });
+  if (r.ok) { s.mode = target; renderLed(); renderHome(); toast(target === 255 ? 'Лента выключена' : 'Лента включена'); }
+}
+
+async function setManual(on) {
+  const r = await api('POST', '/api/led', { settings: { manual: on } });
+  if (!r.ok) return toast('Не удалось: ' + errText(r), 'err');
+  ledInfo.settings.manual = on;
+  toast(on ? 'Ручное управление включено — автоматика на паузе' : 'Управление возвращено автоматике');
+  renderLed(); renderHome();
+  await loadState();
+  if (cfgOrig) updateAuto();
+}
+
+// ---------- попиксельно ----------
+const PX_MAX = 300, PX_CHUNK = 80;
+let pix = [], painting = false;
+
+function buildStrip() {
+  const n = Math.min(ledInfo.settings.led_count || 0, PX_MAX);
+  if (pix.length === n && $('strip').children.length === n) return;
+  pix = Array.from({ length: n }, (_, i) => pix[i] || null);
+  $('strip').innerHTML = pix.map((c, i) => `<div class="px" data-i="${i}" title="#${i}"></div>`).join('');
+  $$('.px').forEach((el, i) => pxDraw(el, pix[i]));
+  pxInfo();
+}
+function pxDraw(el, c) {
+  if (!c) { el.style.background = ''; el.style.boxShadow = ''; return; }
+  const h = hex(c.r, c.g, c.b);
+  el.style.background = h;
+  el.style.boxShadow = (c.r + c.g + c.b) ? `0 0 8px ${h}` : 'inset 0 0 0 1px #333';
+}
+function pxInfo() {
+  const n = pix.filter(Boolean).length, total = ledInfo.settings.led_count || 0;
+  $('pxInfo').textContent = `раскрашено ${n} из ${pix.length}` + (total > PX_MAX ? ` (показаны первые ${PX_MAX} из ${total})` : '');
+}
+function pxPaintAt(x, y) {
+  const el = document.elementFromPoint(x, y);
+  if (!el || !el.classList.contains('px')) return;
+  const c = rgb($('brush').value), i = +el.dataset.i;
+  pix[i] = c; pxDraw(el, c); pxInfo();
+}
+$('strip').addEventListener('pointerdown', e => { painting = true; pxPaintAt(e.clientX, e.clientY); });
+$('strip').addEventListener('pointermove', e => { if (painting) pxPaintAt(e.clientX, e.clientY); });
+window.addEventListener('pointerup', () => painting = false);
+window.addEventListener('pointercancel', () => painting = false);
+
+function pxSetAll(fn) { pix = pix.map((_, i) => fn(i)); $$('.px').forEach((el, i) => pxDraw(el, pix[i])); pxInfo(); }
+function pxFill() { const c = rgb($('brush').value); pxSetAll(() => ({ ...c })); }
+function pxClear() { pxSetAll(() => ({ r: 0, g: 0, b: 0 })); }
+function pxReset() { pxSetAll(() => null); }
+function pxGradient() {
+  const n = pix.length || 1;
+  pxSetAll(i => {
+    const h = i / n * 6, k = Math.floor(h) % 6, f = h - Math.floor(h);
+    const q = Math.round(255 * (1 - f)), t = Math.round(255 * f);
+    const [r, g, b] = [[255, t, 0], [q, 255, 0], [0, 255, t], [0, q, 255], [t, 0, 255], [255, 0, q]][k];
+    return { r, g, b };
+  });
+}
+async function sendPixels() {
+  const list = pix.map((c, i) => c ? { id: i, color: c } : null).filter(Boolean);
+  if (!list.length) return toast('Сначала раскрасьте светодиоды', 'warn');
+  const btn = $('pxSend');
+  btn.disabled = true;
+  let sent = 0;
+  try {
+    // тело запроса на устройстве ограничено 4 КБ — шлём пачками
+    for (let i = 0; i < list.length; i += PX_CHUNK) {
+      const r = await postLed({ leds_arr: list.slice(i, i + PX_CHUNK) });
+      if (!r.ok) break;
+      sent += Math.min(PX_CHUNK, list.length - i);
+    }
+  } finally { btn.disabled = false; }
+  if (sent) { ledInfo.state.mode = 253; renderLed(); renderHome(); toast(`Отправлено пикселей: ${sent}`); }
+}
+
+// ---------- обзор ----------
+function renderHome() {
+  if (!ledInfo) return;
+  const s = ledInfo.state, st = ledInfo.settings;
+  const col = applyPreview($('hOrb'), s.mode, s.color, s.brightness, s.speed);
+  document.querySelector('.hero').style.setProperty('--heroGlow', s.mode === 255 ? 'rgba(91,140,255,.06)' : col.replace('rgb', 'rgba').replace(')', ',.22)'));
+  $('hMode').textContent = modeName(s.mode);
+  $('hMeta').textContent = s.mode === 255 ? `Лента выключена · ${st.led_count} LED`
+    : `Яркость ${Math.round(s.brightness / 2.55)}% · скорость ${s.speed} · ${st.led_count} LED`;
+  $('hPower').querySelector('span').textContent = s.mode === 255 ? 'Включить' : 'Выключить';
+  const mb = $('hManual');
+  mb.classList.toggle('on', !!st.manual);
+  mb.querySelector('span').textContent = st.manual ? 'Ручное: вкл' : 'Ручное управление';
+  setVal($('hBright'), s.brightness);
+  $('hBrightV').textContent = Math.round(s.brightness / 2.55) + '%';
+  renderHomeAutos();
+}
+
+function renderTiles() {
+  if (lastInfo) {
+    const i = lastInfo, m = i.memory_info || {};
+    const synced = i.time && +i.time.slice(0, 4) >= 2024;
+    $('tTime').textContent = i.time ? i.time.slice(11) : '—';
+    $('tTimeS').textContent = synced ? i.time.slice(0, 10) + ' · синхронизировано' : 'время не синхронизировано';
+    $('tTemp').textContent = i.cpu_temp != null ? i.cpu_temp.toFixed(1) + ' °C' : '—';
+    const tb = $('tTempBar');
+    tb.classList.toggle('hot', i.cpu_temp > 65);
+    tb.firstElementChild.style.width = Math.max(0, Math.min(100, (i.cpu_temp - 20) / 60 * 100)) + '%';
+    $('tIram').textContent = fmtBytes(m.iram_free);
+    $('tIramS').textContent = `свободно из ${fmtBytes(m.iram_total)} · мин ${fmtBytes(m.iram_min_free)}`;
+    $('tIramBar').style.width = (m.iram_total ? (1 - m.iram_free / m.iram_total) * 100 : 0) + '%';
+    $('sideTime').textContent = i.time || '—';
+    $('topTime').textContent = i.time ? i.time.slice(11) : '';
+  }
+  const ls = lastState && lastState.light_sensor;
+  $('tLight').textContent = ls ? ls.value : '—';
+  $('tLightS').textContent = ls ? (ls.is_dark ? '🌙 темно' : '☀ светло') + (ls.applied ? ' · лента включена датчиком' : '') : 'датчик не настроен';
+  $('tLightBar').style.width = ls ? Math.min(100, ls.value / 4095 * 100) + '%' : '0';
+  if (netInfo) {
+    const sta = netInfo.mode && netInfo.mode.includes('STA');
+    $('tNet').textContent = sta ? (netInfo.sta_ssid || 'STA') : (netInfo.ap_ssid || netInfo.mode || '—');
+    $('tNetS').textContent = { STA: 'клиент роутера', AP: 'точка доступа', 'AP+STA': 'клиент + точка доступа' }[netInfo.mode] || netInfo.mode;
+  }
+}
+
+function renderHomeAutos() {
+  const owner = lastState ? lastState.current_owner : '';
+  $('hAutos').innerHTML = Object.keys(AUTO).map(k => {
+    const A = AUTO[k], c = cfgOrig && cfgOrig[k];
+    if (!c) return `<a class="arow" href="#/auto"><div class="arow-ic">${A.icon}</div><div class="arow-b"><b>${A.title}</b><span>не настроена — нажмите, чтобы настроить</span></div><span class="badge">выкл</span></a>`;
+    const a = c.action || {}, t = a.time;
+    const when = t ? `${hm(t.start)}–${hm(t.end)}` : 'круглосуточно';
+    const what = k === 'button' ? `держит ${human(a.hold || 0)}` : `темно ${a.dark < a.light ? '≤' : '≥'} ${a.dark}, светло ${a.dark < a.light ? '≥' : '≤'} ${a.light}`;
+    const st = autoStatus(k);
+    return `<a class="arow ${owner === k ? 'owner' : ''}" href="#/auto"><div class="arow-ic">${A.icon}</div>
+      <div class="arow-b"><b>${A.title}</b><span>${esc(what)} · ${when} · «${esc(modeName((a.led || {}).mode))}»</span></div>
+      <span class="${st.cls}">${st.txt}</span></a>`;
+  }).join('');
+}
+
+// ---------- state / info ----------
+async function loadState() {
+  const r = await api('GET', '/api/device?state=');
+  if (!r.data) { $('stRaw').textContent = errText(r); return; }
+  lastState = r.data;
+  $('stRaw').textContent = JSON.stringify(r.data, null, 2);
+  const t = 'обновлено ' + new Date().toLocaleTimeString();
+  $('stAt').textContent = t;
+  $('sideUpd').textContent = t;
+  renderTiles(); renderHomeAutos(); renderLed();
+  if (cfgOrig) updateAuto();
+}
+
+async function loadInfo() {
+  const r = await api('GET', '/api/device?info=');
+  if (!r.data) return toast('Устройство: ' + errText(r), 'err');
+  lastInfo = r.data;
+  renderTiles(); renderSys();
+  if (cfgOrig) updateAuto();
+}
+
+let stateTimer = setInterval(() => {
+  if (!$('stAuto').checked || document.hidden || !booted) return;
+  loadState().then(loadInfo);
+}, 30000);
+
+// ---------- система ----------
+function renderSys() {
+  if (lastInfo) {
+    const i = lastInfo, m = i.memory_info || {};
+    $('sTemp').textContent = i.cpu_temp != null ? i.cpu_temp.toFixed(1) + ' °C' : '';
+    $('sTemp').className = 'badge ' + (i.cpu_temp > 65 ? 'err' : 'acc');
+    $('sKv').innerHTML = `<span>Время</span><span>${esc(i.time || '—')}</span><span>Светодиодов</span><span>${ledInfo ? ledInfo.settings.led_count : '—'}</span>`;
+    $('sIram').textContent = `${fmtBytes(m.iram_total - m.iram_free)} / ${fmtBytes(m.iram_total)} · мин своб. ${fmtBytes(m.iram_min_free)}`;
+    $('sIramBar').style.width = (m.iram_total ? (1 - m.iram_free / m.iram_total) * 100 : 0) + '%';
+    $('sPsram').textContent = m.psram_total ? `${fmtBytes(m.psram_total - m.psram_free)} / ${fmtBytes(m.psram_total)} · мин своб. ${fmtBytes(m.psram_min_free)}` : 'нет';
+    $('sPsramBar').style.width = (m.psram_total ? (1 - m.psram_free / m.psram_total) * 100 : 0) + '%';
+  }
+  if (ledInfo) {
+    setVal($('ledCount'), ledInfo.settings.led_count);
+    if (document.activeElement !== $('ledSave')) $('ledSave').checked = !!ledInfo.settings.save_mode;
+  }
+}
+
+async function applySettings() {
+  const r = await api('POST', '/api/led', { settings: { led_count: +$('ledCount').value, save_mode: $('ledSave').checked } });
+  if (r.ok) { toast('Настройки ленты сохранены'); await loadLed(); }
+  else toast('Не удалось: ' + errText(r), 'err');
+}
+
+async function restart() {
+  if (!await ask('Перезагрузить устройство?', 'Контроллер перезапустится, лента на пару секунд погаснет.', 'Перезагрузить', true)) return;
+  const r = await api('GET', '/api/device?restart=');
+  if (r.ok) waitReboot();
+  else toast('Не удалось: ' + errText(r), 'err');
+}
+
+async function sendRaw() {
+  const m = $('rawMethod').value, body = $('rawBody').value.trim();
+  const r = await api(m, $('rawUrl').value, m === 'POST' && body ? body : undefined, 20000);
+  toast(`${m} ${$('rawUrl').value} → ${r.status || 'нет связи'}`, r.ok ? 'ok' : 'err');
+  const first = $('log').firstElementChild;
+  if (first) first.open = true;
+}
+
+// ---------- сеть ----------
+let netMode = 'sta';
+async function loadNet() {
+  const r = await api('GET', '/api/network?info=');
+  if (!r.data) return toast('Сеть: ' + errText(r), 'err');
+  netInfo = r.data;
+  const n = netInfo;
+  $('nMode').textContent = { STA: 'Клиент роутера', AP: 'Точка доступа', 'AP+STA': 'Клиент + точка', Null: 'Выключен' }[n.mode] || n.mode;
+  let kv = '';
+  if (n.sta_ssid !== undefined) kv += `<span>Сеть (STA)</span><span>${esc(n.sta_ssid || '—')}</span><span>Пароль STA</span><span data-secret="${esc(n.sta_password || '')}">••••••••</span>`;
+  if (n.ap_ssid !== undefined) kv += `<span>Точка (AP)</span><span>${esc(n.ap_ssid || '—')}</span><span>Пароль AP</span><span data-secret="${esc(n.ap_password || '')}">••••••••</span>`;
+  $('nKv').innerHTML = kv + '<span></span><span><button class="btn sm ghost" id="showSecrets">Показать пароли</button></span>';
+  renderTiles();
+}
+$('nKv').addEventListener('click', e => {
+  if (e.target.id !== 'showSecrets') return;
+  const show = e.target.textContent.startsWith('Показать');
+  $$('[data-secret]').forEach(el => el.textContent = show ? (el.dataset.secret || '(пусто)') : '••••••••');
+  e.target.textContent = show ? 'Скрыть пароли' : 'Показать пароли';
+});
+
+$('netSeg').addEventListener('click', e => {
+  const b = e.target.closest('[data-seg]');
+  if (!b) return;
+  netMode = b.dataset.seg;
+  $$('#netSeg button').forEach(x => x.classList.toggle('active', x === b));
+  $('netHint').textContent = netMode === 'sta'
+    ? 'Устройство подключится к роутеру. После перезагрузки оно может получить новый IP.'
+    : 'Устройство поднимет свою Wi-Fi сеть. Подключитесь к ней, чтобы вернуться на эту страницу.';
+});
+
+function togglePw(id, btn) {
+  const el = $(id);
+  el.type = el.type === 'password' ? 'text' : 'password';
+  btn.classList.toggle('on', el.type === 'text');
+}
+
+function sigBars(rssi) {
+  const lvl = rssi > -55 ? 4 : rssi > -67 ? 3 : rssi > -78 ? 2 : 1;
+  return `<span class="sig">${[1, 2, 3, 4].map(i => `<i class="${i <= lvl ? 'f' : ''}" style="height:${i * 25}%"></i>`).join('')}</span>`;
+}
+
+async function scanNet() {
+  const btn = $('scanBtn');
+  btn.classList.add('spin'); btn.disabled = true;
+  $('scanList').innerHTML = '<div class="empty">Сканирую эфир…</div>';
+  const r = await api('GET', '/api/network?scanwifi=', undefined, 20000);
+  btn.classList.remove('spin'); btn.disabled = false;
+  const list = ((r.data && r.data.wifi_networks) || []).sort((a, b) => b.rssi - a.rssi);
+  $('scanList').innerHTML = list.length
+    ? list.map(n => `<div class="scan-row" data-ssid="${esc(n.ssid)}">${sigBars(n.rssi)}<b>${esc(n.ssid || '(скрытая сеть)')}</b>
+        <span class="muted small">${esc(n.bssid)}</span><span class="badge">${n.rssi} dBm</span></div>`).join('')
+    : `<div class="empty">${r.data ? 'Сетей не найдено' : esc(errText(r))}</div>`;
+}
+$('scanList').addEventListener('click', e => {
+  const row = e.target.closest('[data-ssid]');
+  if (!row) return;
+  $('netSeg').querySelector('[data-seg=sta]').click();
+  $('netSsid').value = row.dataset.ssid;
+  $('netPass').focus();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+
+async function applyNet() {
+  const ssid = $('netSsid').value.trim(), pass = $('netPass').value;
+  if (!ssid) return toast('Укажите имя сети', 'warn');
+  const what = netMode === 'sta' ? `подключиться к «${ssid}»` : `поднять точку доступа «${ssid}»`;
+  if (!await ask('Сменить подключение?', `Устройство перезагрузится и попробует ${what}. Если что-то пойдёт не так, страница станет недоступна по текущему адресу.`, 'Применить', true)) return;
+  const body = { mode: netMode, [netMode]: { [netMode + '_ssid']: ssid, [netMode + '_password']: pass } };
+  const r = await api('POST', '/api/network', body);
+  if (r.ok) waitReboot(netMode === 'sta' ? 'Устройство может получить новый IP — тогда откройте его по mDNS-имени или новому адресу.' : `Подключитесь к сети «${ssid}».`);
+  else toast('Сеть: ' + errText(r), 'err');
+}
+
+// ---------- эффекты ----------
+let files = null, fxCurrent = null;
+async function loadFiles() {
+  const r = await api('GET', '/api/file?info=');
+  if (!r.data) return toast('Файлы: ' + errText(r), 'err');
+  files = r.data.files || [];
+  const info = r.data.info || {};
+  $('fsInfo').textContent = `${fmtBytes(info.size_used)} из ${fmtBytes(info.size_total)}`;
+  $('fsBar').style.width = (info.size_total ? info.size_used / info.size_total * 100 : 0) + '%';
+  renderFiles();
+}
+function renderFiles() {
+  $('fileList').innerHTML = files.length
+    ? files.map(f => `<div class="li ${f.name === fxCurrent ? 'active' : ''}" data-open="${esc(f.name)}"><div class="li-ic"><i data-ic="file"></i></div>
+        <div class="li-b"><b>${esc(f.name)}</b><span>${fmtBytes(f.size)}</span></div></div>`).join('')
+    : '<div class="empty">Скриптов пока нет.<br>Нажмите «Новый».</div>';
+  icons($('fileList'));
+}
+$('fileList').addEventListener('click', e => { const li = e.target.closest('[data-open]'); if (li) openFile(li.dataset.open); });
+
+function fxStatus() {
+  const id = +$('fId').value, m = modes.find(x => x.id_mode === id);
+  const el = $('fxState');
+  if (!fxCurrent) { el.className = 'badge'; el.textContent = 'не сохранён'; return; }
+  el.className = 'badge ' + (m ? 'on' : 'warn');
+  el.textContent = m ? `режим #${id} «${m.name}»` : `#${id} нет в режимах`;
+}
+function newFile() {
+  fxCurrent = null;
+  $('fName').value = ''; $('fText').value = ''; $('fCont').checked = true;
+  const used = new Set(modes.map(m => m.id_mode));
+  let id = 10; while (used.has(id) && id < 250) id++;
+  $('fId').value = id;
+  $('fxTitle').textContent = 'Новый эффект';
+  $('fxDel').hidden = true;
+  fxStatus(); renderFiles();
+  $('fName').focus();
+}
+async function openFile(name) {
+  const r = await api('GET', '/api/file?name=' + encodeURIComponent(name));
+  if (!r.data) return toast('Файл: ' + errText(r), 'err');
+  const d = r.data;
+  fxCurrent = name;
+  $('fName').value = d.name ?? name;
+  $('fId').value = d.id ?? '';
+  $('fCont').checked = !!d.continuous;
+  $('fText').value = d.text ?? JSON.stringify(d, null, 2);
+  $('fxTitle').textContent = name;
+  $('fxDel').hidden = false;
+  fxStatus(); renderFiles();
+}
+async function deleteFile(name) {
+  if (!name) return;
+  if (!await ask(`Удалить «${name}»?`, 'Файл скрипта будет удалён с устройства.', 'Удалить', true)) return;
+  const r = await api('DELETE', '/api/file?name=' + encodeURIComponent(name));
+  if (!r.ok) return toast('Удаление: ' + errText(r), 'err');
+  toast('Файл удалён');
+  newFile();
+  await loadFiles();
+}
+async function saveFile() {
+  const name = $('fName').value.trim(), id = +$('fId').value;
+  if (!name) return toast('Укажите имя файла', 'warn');
+  if (!$('fText').value.trim()) return toast('Скрипт пустой', 'warn');
+  const r = await api('POST', '/api/file', { name, text: $('fText').value, id, continuous: $('fCont').checked });
+  if (!r.ok) return toast('Сохранение: ' + errText(r), 'err');
+  toast('Отправлено на компиляцию…');
+  fxCurrent = name;
+  $('fxTitle').textContent = name;
+  $('fxDel').hidden = false;
+  await loadFiles();
+  await sleep(1500);   // компиляция асинхронная — список режимов проверяем чуть позже
+  await loadLed();
+  const ok = modes.some(m => m.id_mode === id);
+  toast(ok ? `Эффект доступен как режим #${id}` : `Режим #${id} не появился — смотрите лог ESP`, ok ? 'ok' : 'warn');
+  fxStatus();
+}
+$('fId').addEventListener('input', fxStatus);
+// Tab в редакторе вставляет отступ
+$('fText').addEventListener('keydown', e => {
+  if (e.key !== 'Tab') return;
+  e.preventDefault();
+  const t = e.target, s = t.selectionStart;
+  t.setRangeText('  ', s, t.selectionEnd, 'end');
+});
+
+// ---------- автоматика ----------
+// cfgOrig — как лежит на устройстве, cfg — рабочая копия, которую правят поля.
+// Неизвестные поля конфига сохраняются: правим только свои ключи поверх загруженного объекта.
+const AUTO = {
+  button: {
+    title: 'Кнопка', icon: '🔘',
+    defaults: { priority: 100, action: { hold: 180,
+      led: { mode: 254, speed: 128, brightness: 255, color: { r: 255, g: 255, b: 255 } } } }
+  },
+  light_sensor: {
+    title: 'Датчик света', icon: '🌙',
+    defaults: { priority: 20, action: { dark: 300, light: 800,
+      time: { start: { hour: 18, minute: 0 }, end: { hour: 8, minute: 0 } },
+      led: { mode: 254, speed: 128, brightness: 200, color: { r: 255, g: 180, b: 80 } } } }
+  }
+};
+const ADC_MAX = 4095;
+const HOLD_PRESETS = [10, 30, 60, 180, 300, 600, 1800];
+let cfgOrig = null, cfg = {};
+
+const getPath = (o, p) => p.split('.').reduce((a, k) => a == null ? a : a[k], o);
+function setPath(o, p, v) {
+  const ks = p.split('.'), last = ks.pop();
+  ks.reduce((a, k) => (a[k] = a[k] && typeof a[k] === 'object' ? a[k] : {}), o)[last] = v;
+}
+const pad2 = n => String(n).padStart(2, '0');
+const hm = t => t ? pad2(t.hour || 0) + ':' + pad2(t.minute || 0) : '';
+const tmin = t => (t.hour || 0) * 60 + (t.minute || 0);
+
+function human(s) {
+  if (s < 60) return s + ' с';
+  if (s < 3600) return Math.floor(s / 60) + ' мин' + (s % 60 ? ' ' + s % 60 + ' с' : '');
+  return Math.floor(s / 3600) + ' ч' + (s % 3600 >= 60 ? ' ' + Math.floor(s % 3600 / 60) + ' мин' : '');
+}
+
+function nowMinutes() {
+  const m = lastInfo && /(\d\d):(\d\d)$/.exec(lastInfo.time || '');
+  if (m) return +m[1] * 60 + +m[2];
+  const d = new Date();
+  return d.getHours() * 60 + d.getMinutes();
+}
+
+// статус автоматики для бейджей (карточка + обзор)
+function autoStatus(k) {
+  const manual = ledInfo && ledInfo.settings.manual;
+  if (!cfgOrig || !cfgOrig[k]) return { txt: 'новая', cls: 'badge warn' };
+  if (manual) return { txt: 'на паузе', cls: 'badge warn' };
+  if (!lastState) return { txt: '…', cls: 'badge' };
+  let txt, cls = 'badge';
+  if (lastState.current_owner === k) { txt = 'светит'; cls += ' on'; }
+  else if (lastState[k] && lastState[k].applied) { txt = 'применена'; cls += ' acc'; }
+  else txt = 'ожидает';
+  if (k === 'light_sensor' && lastState.light_sensor) txt += lastState.light_sensor.is_dark ? ' · темно' : ' · светло';
+  return { txt, cls };
+}
+
+// недостающие поля дополняем значениями по умолчанию, чтобы у каждого поля было значение
+function normalize(k) {
+  const c = cfg[k], d = AUTO[k].defaults;
+  if (c.priority == null) c.priority = d.priority;
+  c.action = c.action || {};
+  c.action.led = Object.assign({}, d.action.led, c.action.led);
+  c.action.led.color = Object.assign({}, d.action.led.color, c.action.led.color);
+  if (k === 'button' && c.action.hold == null) c.action.hold = d.action.hold;
+  if (k === 'light_sensor') {
+    if (c.action.dark == null) c.action.dark = d.action.dark;
+    if (c.action.light == null) c.action.light = d.action.light;
+  }
+}
+
+function cardHtml(k) {
+  const A = AUTO[k];
+  if (!cfg[k]) {
+    return `<div class="ac-empty"><div class="ac-icon">${A.icon}</div><h3>${A.title}</h3>
+      <p class="muted">На устройстве нет конфига для этой автоматики.</p>
+      <button class="btn primary" data-add="${k}"><i data-ic="plus"></i>Настроить</button></div>`;
+  }
+  normalize(k);
+  const a = cfg[k].action, t = a.time, p = k + '.action.led';
+
+  let specific;
+  if (k === 'button') {
+    specific = `<div class="grp">
+      <div class="grp-t">Держать после нажатия <span class="big" data-show="button.action.hold"></span></div>
+      <div class="chips">${HOLD_PRESETS.map(s => `<button class="chip" data-hold="${s}">${human(s)}</button>`).join('')}</div>
+      <label class="f"><span>Секунд</span><input type="number" min="1" data-k="button.action.hold"></label>
+      <div class="muted small">Повторное нажатие продлевает время.</div></div>`;
+  } else {
+    specific = `<div class="grp">
+      <div class="grp-t">Пороги освещённости <span class="muted">АЦП 0…${ADC_MAX}</span></div>
+      <div class="lscale" data-lscale>
+        <div class="ls-hyst"></div>
+        <div class="ls-mark dark"><span>🌙</span></div>
+        <div class="ls-mark light"><span>☀</span></div>
+        <div class="ls-now" hidden><span></span></div>
+      </div>
+      <label class="f"><span>🌙 Темно</span><input type="range" min="0" max="${ADC_MAX}" data-k="light_sensor.action.dark"><input type="number" class="num" min="0" max="${ADC_MAX}" data-k="light_sensor.action.dark"></label>
+      <label class="f"><span>☀ Светло</span><input type="range" min="0" max="${ADC_MAX}" data-k="light_sensor.action.light"><input type="number" class="num" min="0" max="${ADC_MAX}" data-k="light_sensor.action.light"></label>
+      <div class="muted small" data-lhint></div>
+      <div class="row mt"><button class="btn sm" data-lcur="dark">Текущее → «темно»</button><button class="btn sm" data-lcur="light">Текущее → «светло»</button></div></div>`;
+  }
+
+  return `<div class="ac-head"><span class="ac-icon">${A.icon}</span><b>${A.title}</b>
+      <span class="badge" data-badge="${k}"></span>
+      ${cfgOrig && cfgOrig[k] ? '' : `<button class="btn icon ghost" data-remove="${k}" title="Не добавлять">✕</button>`}</div>
+    <div class="grp">
+      <div class="grp-t">Приоритет <span class="big" data-show="${k}.priority"></span></div>
+      <input type="range" min="0" max="255" data-k="${k}.priority" style="width:100%">
+    </div>
+    ${specific}
+    <div class="grp">
+      <div class="grp-t">Время работы
+        <span class="row"><span class="muted" data-tlabel="${k}"></span>
+        <label class="sw" title="Только в заданное время"><input type="checkbox" data-time="${k}" ${t ? 'checked' : ''}><span></span></label></span></div>
+      <div class="trow" data-trow="${k}" ${t ? '' : 'hidden'}>
+        <input type="time" data-tpart="${k}.start" value="${hm(t && t.start)}"> — <input type="time" data-tpart="${k}.end" value="${hm(t && t.end)}">
+      </div>
+      <div class="tl" data-tl="${k}"></div>
+      <div class="ticks"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
+    </div>
+    <div class="grp">
+      <div class="grp-t">Что включить на ленте</div>
+      <div class="ledrow">
+        <div class="swwrap"><div class="swatch prev" data-swatch="${k}"></div><span class="muted" data-mname="${k}"></span></div>
+        <div class="ledctl">
+          <select data-k="${p}.mode">${modeOptions(a.led.mode)}</select>
+          <label class="f"><span>Яркость</span><input type="range" min="1" max="255" data-k="${p}.brightness"><span class="val" data-show="${p}.brightness"></span></label>
+          <label class="f"><span>Скорость</span><input type="range" min="1" max="255" data-k="${p}.speed"><span class="val" data-show="${p}.speed"></span></label>
+          <label class="f"><span>Цвет</span><input type="color" data-k="${p}.color" style="width:44px;height:32px"><span class="muted small" data-show="${p}.color"></span></label>
+        </div>
+      </div>
+      <div class="row mt"><button class="btn sm" data-try="${k}"><i data-ic="play"></i>Проверить на ленте</button></div>
+    </div>`;
+}
+
+function renderAuto() {
+  Object.keys(AUTO).forEach(k => $('ac-' + k).innerHTML = cardHtml(k));
+  icons($('autoSec'));
+  updateAuto();
+}
+
+function fmtShow(path, v) {
+  if (path.endsWith('.hold')) return human(v);
+  if (path.endsWith('.color')) return `${v.r}, ${v.g}, ${v.b}`;
+  return v;
+}
+
+// обновляем значения и картинки без перерисовки DOM, чтобы не терять фокус у поля
+function updateAuto() {
+  const sec = $('autoSec');
+  sec.querySelectorAll('[data-k]').forEach(el => {
+    if (el === document.activeElement && el.type !== 'range') return;
+    const v = getPath(cfg, el.dataset.k);
+    if (v == null) return;
+    el.value = el.type === 'color' ? hex(v.r, v.g, v.b) : v;
+  });
+  paintAll(sec);
+  sec.querySelectorAll('[data-show]').forEach(el => {
+    const v = getPath(cfg, el.dataset.show);
+    if (v != null) el.textContent = fmtShow(el.dataset.show, v);
+  });
+
+  const owner = lastState ? lastState.current_owner : null;
+  Object.keys(AUTO).forEach(k => {
+    const card = $('ac-' + k), c = cfg[k];
+    card.classList.toggle('owner', !!c && owner === k && !(ledInfo && ledInfo.settings.manual));
+    if (!c) return;
+    const a = c.action;
+
+    const st = autoStatus(k), b = card.querySelector('[data-badge]');
+    b.className = st.cls; b.textContent = st.txt;
+
+    // время
+    const t = a.time, now = nowMinutes();
+    let segs = [[0, 1440]];
+    if (t) {
+      const s = tmin(t.start), e = tmin(t.end);
+      segs = s < e ? [[s, e]] : [[s, 1440], [0, e]];
+    }
+    const inWin = !t || segs.some(([s, e]) => now >= s && now < e);
+    card.querySelector('[data-tlabel]').textContent = t ? (inWin ? 'сейчас активна' : 'сейчас спит') : 'круглосуточно';
+    card.querySelector('[data-tl]').innerHTML =
+      segs.map(([s, e]) => `<div class="tl-seg" style="left:${s / 14.4}%;width:${(e - s) / 14.4}%${t ? '' : ';opacity:.35'}"></div>`).join('') +
+      `<div class="tl-now" style="left:${now / 14.4}%" title="сейчас"></div>`;
+
+    // превью ленты
+    const led = a.led;
+    applyPreview(card.querySelector('[data-swatch]'), led.mode, led.color, led.brightness, led.speed);
+    card.querySelector('[data-mname]').textContent = modeName(led.mode);
+
+    if (k === 'button') card.querySelectorAll('[data-hold]').forEach(ch => ch.classList.toggle('sel', +ch.dataset.hold === a.hold));
+
+    if (k === 'light_sensor') {
+      const dark = a.dark, light = a.light, lessDark = dark < light;
+      const pct = v => Math.max(0, Math.min(100, v / ADC_MAX * 100));
+      const sc = card.querySelector('[data-lscale]');
+      sc.style.background = `linear-gradient(90deg, ${lessDark ? '#0d1030, #f5d76e' : '#f5d76e, #0d1030'})`;
+      sc.querySelector('.ls-mark.dark').style.left = pct(dark) + '%';
+      sc.querySelector('.ls-mark.light').style.left = pct(light) + '%';
+      const hy = sc.querySelector('.ls-hyst');
+      hy.style.left = pct(Math.min(dark, light)) + '%';
+      hy.style.width = (pct(Math.max(dark, light)) - pct(Math.min(dark, light))) + '%';
+      const nowEl = sc.querySelector('.ls-now');
+      const cur = lastState && lastState.light_sensor ? lastState.light_sensor.value : -1;
+      nowEl.hidden = cur < 0;
+      if (cur >= 0) { nowEl.style.left = pct(cur) + '%'; nowEl.querySelector('span').textContent = 'сейчас ' + cur; }
+      card.querySelector('[data-lhint]').textContent = dark === light
+        ? '⚠ Пороги совпадают — нет гистерезиса, лента будет дёргаться.'
+        : `Темно при ${lessDark ? '≤' : '≥'} ${dark}, светло при ${lessDark ? '≥' : '≤'} ${light}. Между ними — зона гистерезиса, состояние не меняется.`;
+    }
+  });
+
+  // приоритеты
+  const present = Object.keys(AUTO).filter(k => cfg[k]);
+  $('prioScale').innerHTML = present.map((k, i) =>
+    `<div class="pchip" style="left:${Math.max(10, Math.min(90, cfg[k].priority / 2.55))}%;top:${present.length > 1 ? (i ? 72 : 28) : 50}%">${AUTO[k].icon} ${AUTO[k].title} · ${cfg[k].priority}</div>`).join('')
+    || '<div class="empty" style="padding:14px">Нет настроенных автоматик</div>';
+  let pt = 'ручное управление ставит всех на паузу';
+  if (present.length === 2) {
+    const [x, y] = present.map(k => cfg[k]), [nx, ny] = present.map(k => AUTO[k].title);
+    pt = x.priority === y.priority ? `равны — светит тот, кто захватил первым · ${pt}`
+       : `${x.priority > y.priority ? nx : ny} перебивает ${x.priority > y.priority ? ny : nx} · ${pt}`;
+  }
+  $('prioText').textContent = pt;
+
+  const dirty = !!cfgOrig && JSON.stringify(cfg) !== JSON.stringify(cfgOrig);
+  $('saveBar').classList.toggle('dirty', dirty);
+  $('sbText').textContent = dirty ? 'Есть несохранённые изменения' : 'Изменений нет';
+  $('sbSave').disabled = !dirty;
+  $('navDirty').hidden = !dirty;
+  if (document.activeElement !== $('cfgText')) $('cfgText').value = JSON.stringify(cfg, null, 2);
+}
+
+function inputValue(el) {
+  if (el.type === 'color') return rgb(el.value);
+  if (el.type === 'checkbox') return el.checked;
+  const n = +el.value;
+  return isNaN(n) ? null : n;
+}
+
+$('autoSec').addEventListener('input', e => {
+  const el = e.target, d = el.dataset;
+  if (d.k) {
+    const v = inputValue(el);
+    if (v === null || el.value === '') return;
+    setPath(cfg, d.k, v);
+  } else if (d.time) {
+    const a = cfg[d.time].action;
+    if (el.checked) a.time = a.time || { start: { hour: 18, minute: 0 }, end: { hour: 8, minute: 0 } };
+    else delete a.time;
+    const card = $('ac-' + d.time);
+    card.querySelector('[data-trow]').hidden = !el.checked;
+    if (a.time) {
+      card.querySelector('[data-tpart$=".start"]').value = hm(a.time.start);
+      card.querySelector('[data-tpart$=".end"]').value = hm(a.time.end);
+    }
+  } else if (d.tpart) {
+    if (!el.value) return;
+    const [k, part] = d.tpart.split('.'), [h, m] = el.value.split(':');
+    cfg[k].action.time[part] = { hour: +h, minute: +m };
+  } else return;
+  updateAuto();
+});
+
+$('autoSec').addEventListener('click', async e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  const d = b.dataset;
+  if (d.add) { cfg[d.add] = clone(AUTO[d.add].defaults); renderAuto(); }
+  else if (d.remove) { delete cfg[d.remove]; renderAuto(); }
+  else if (d.hold) { cfg.button.action.hold = +d.hold; updateAuto(); }
+  else if (d.lcur) {
+    const cur = lastState && lastState.light_sensor ? lastState.light_sensor.value : -1;
+    if (cur < 0) return toast('Нет текущего значения датчика', 'warn');
+    cfg.light_sensor.action[d.lcur] = cur;
+    updateAuto();
+  } else if (d.try) {
+    const led = cfg[d.try].action.led;
+    const r = await postLed({ state: clone(led) });
+    if (r.ok) { Object.assign(ledInfo.state, clone(led)); renderLed(); renderHome(); toast(`На ленте «${modeName(led.mode)}»`); }
+  }
+});
+
+async function loadConfig() {
+  const r = await api('GET', '/api/device?config=');
+  if (!r.data) return toast('Автоматика: ' + errText(r), 'err');
+  cfgOrig = r.data;
+  cfg = clone(r.data);
+  renderAuto();
+  // normalize дописал поля по умолчанию — считаем это исходным состоянием, а не правкой
+  cfgOrig = clone(cfg);
+  updateAuto();
+  renderHomeAutos();
+  renderLed();
+}
+
+function resetConfig() {
+  if (!cfgOrig) return;
+  cfg = clone(cfgOrig);
+  renderAuto();
+}
+
+function jsonToFields() {
+  try { cfg = JSON.parse($('cfgText').value); } catch (e) { return toast('Невалидный JSON: ' + e.message, 'err'); }
+  renderAuto();
+  toast('JSON применён к полям');
+}
+
+function validateConfig() {
+  const errs = [];
+  Object.keys(AUTO).forEach(k => {
+    const c = cfg[k];
+    if (!c) return;
+    const led = c.action.led, T = AUTO[k].title;
+    // прошивка игнорирует нулевые mode/speed/brightness (from_json требует > 0)
+    ['mode', 'speed', 'brightness'].forEach(f => { if (!(led[f] > 0)) errs.push(`${T}: ${f} должен быть > 0`); });
+    if (c.priority < 0 || c.priority > 255) errs.push(`${T}: приоритет 0…255`);
+    if (k === 'button' && !(c.action.hold > 0)) errs.push(`${T}: время удержания > 0`);
+    if (k === 'light_sensor' && c.action.dark === c.action.light) errs.push(`${T}: пороги «темно» и «светло» совпадают`);
+  });
+  return errs;
+}
+
+async function saveConfig() {
+  if (!Object.keys(AUTO).some(k => cfg[k])) return toast('Нечего сохранять', 'warn');
+  const errs = validateConfig();
+  if (errs.length) return toast(errs[0], 'err');
+  if (!await ask('Сохранить автоматику?', 'Конфиг запишется в память устройства, после чего оно перезагрузится.', 'Сохранить')) return;
+  const r = await api('POST', '/api/device', cfg);
+  if (r.ok) waitReboot();
+  else toast('Автоматика: ' + errText(r), 'err');
+}
+
+window.addEventListener('beforeunload', e => {
+  if (cfgOrig && JSON.stringify(cfg) !== JSON.stringify(cfgOrig)) { e.preventDefault(); e.returnValue = ''; }
+});
+
+// ---------- роутинг ----------
+const PAGES = ['home', 'led', 'auto', 'fx', 'net', 'sys'];
+function route() {
+  const h = location.hash.replace(/^#\/?/, '');
+  const page = PAGES.includes(h) ? h : 'home';
+  $$('.page').forEach(s => s.hidden = s.id !== 'p-' + page);
+  $$('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === page));
+  document.title = 'WebLed · ' + document.querySelector(`[data-nav=${page}] span`).textContent;
+  window.scrollTo(0, 0);
+  paintAll();
+  if (page === 'fx' && booted && !files) loadFiles().then(() => { if (!fxCurrent) newFile(); });
+}
+window.addEventListener('hashchange', route);
+
+// ESP держит мало сокетов — стартовые запросы идут по очереди
+async function boot() {
+  await loadLed();
+  await loadState();
+  await loadInfo();
+  await loadConfig();
+  await loadNet();
+  booted = true;
+  files = null;
+  route();
+}
+
+icons();
+route();
+boot();
+</script>
+</body>
+</html>

@@ -137,6 +137,16 @@ static esp_err_t api_device_handler_get(httpd_req_t *req) {
 
     return send_resp_json(root, req);
   }
+  
+  if (get_query_param(req, "state", value, sizeof(value))) {
+    cJSON_AddStringToObject(root, "current_owner", contorller->get_owner_name().c_str());
+    for (const auto &item : contorller->automations) {
+      Automation *obj = item.get();
+      obj->get_state(root);
+    }
+
+    return send_resp_json(root, req);
+  }
 
   if (get_query_param(req, "restart", value, sizeof(value))) {
     send_json_status(req, "status", true, nullptr, nullptr);

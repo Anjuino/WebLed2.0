@@ -42,6 +42,7 @@ class Automation {
     virtual ~Automation() = default;
 
     virtual void from_json(cJSON *json) = 0;
+    virtual void get_state(cJSON *json) = 0;
     virtual void start() = 0;
 
     uint8_t get_priority() { return priority; };

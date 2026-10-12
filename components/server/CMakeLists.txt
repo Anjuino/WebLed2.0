@@ -13,3 +13,4 @@ else()
 endif()
 
 target_add_binary_data(${COMPONENT_LIB} "cert/remote_ca.crt" EMBED_TXTFILES)
+target_add_binary_data(${COMPONENT_LIB} "web/index.html" TEXT)

@@ -21,8 +21,6 @@ class device {
   private:
     led *wled = nullptr;
     FileSystem *fs = nullptr;
-
-    std::vector<std::unique_ptr<Automation>> automations;   // пул
     Automation *current_owner = nullptr;                    // кто держит ленту
     SemaphoreHandle_t owner_mutex;                          // engage зовут из разных задач
 
@@ -31,6 +29,7 @@ class device {
     bool manual_active = false;                             // ручное управление — всем engage отказ
 
   public:
+    std::vector<std::unique_ptr<Automation>> automations;   // пул
     NVSProxy settings;
     sntp_time t_time;
     device();

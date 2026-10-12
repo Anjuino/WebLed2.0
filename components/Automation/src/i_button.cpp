@@ -21,6 +21,12 @@ i_button::~i_button() {
   if (hold_timer) xTimerDelete(hold_timer, portMAX_DELAY);
 }
 
+void i_button::get_state(cJSON *json) {
+  cJSON *btn = cJSON_CreateObject();
+  cJSON_AddBoolToObject(btn, "applied", applied);
+  cJSON_AddItemToObject(json, "button", btn);
+}
+
 void i_button::from_json(cJSON *json) {
   cJSON *j_priority = cJSON_GetObjectItem(json, "priority");
   if (cJSON_IsNumber(j_priority) && j_priority->valueint >= 0 && j_priority->valueint <= 255) {
@@ -108,6 +114,7 @@ void i_button::on_press() {
 
   if (!dev->engage(this)) {
     ESP_LOGI(TAG, "press: лента занята более приоритетным источником");
+    applied = false;
     return;
   }
 
@@ -115,6 +122,7 @@ void i_button::on_press() {
   class led *wled = dev->get_led();
 
   if(wled) wled->set_state(state.r, state.g, state.b, state.mode, state.speed, state.brightness);
+  applied = true;
 
   if (hold_timer) xTimerReset(hold_timer, 0);   // повторное нажатие продлевает
 }
@@ -122,4 +130,5 @@ void i_button::on_press() {
 void i_button::on_timer() {
   ESP_LOGI(TAG, "timer: отпускаю ленту");
   dev->release(this);
+  applied = false;
 }
