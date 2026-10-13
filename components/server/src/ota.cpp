@@ -8,11 +8,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include "private.h"
+#include "version.h"
 
 #define OTA_REMOTE_URL "https://192.168.0.113:5000/getfirmware"
 #define OTA_ACK_URL    "https://192.168.0.113:5000/ack"
-
-#define FIRMWARE_VERSION 1
 
 static const char *TAG = "OTA";
 
@@ -157,16 +156,16 @@ esp_err_t OtaManager::fetch_from_url(const char *url) {
 
   char fetch_url[256];
   int nu = snprintf(fetch_url, sizeof(fetch_url),
-                    "%s%scurrent=%d&chipid=%s",
+                    "%s%scurrent=%s&chipid=%s",
                     url,
                     strchr(url, '?') ? "&" : "?",
-                    FIRMWARE_VERSION, chip_id);
+                    firmware_version(), chip_id);
   if (nu <= 0 || nu >= (int)sizeof(fetch_url)) {
     ESP_LOGE(TAG, "fetch_from_url: URL too long");
     return ESP_ERR_INVALID_ARG;
   }
 
-  ESP_LOGI(TAG, "Remote OTA: current=v%d, chipid=%s", FIRMWARE_VERSION, chip_id);
+  ESP_LOGI(TAG, "Remote OTA: current=%s, chipid=%s", firmware_version(), chip_id);
   ESP_LOGI(TAG, "Remote OTA: GET %s", fetch_url);
 
   esp_http_client_config_t cfg = {};
@@ -272,7 +271,7 @@ static esp_err_t remote_ota_upload_handler(httpd_req_t *req) {
   }
 
   ota->set_in_progress(true);
-  BaseType_t ok = xTaskCreate(ota_remote_task, "ota_remote", 10 * 1024, ota, 5, NULL);
+  BaseType_t ok = xTaskCreate(ota_remote_task, "ota_remote", 10 * 1024, ota, 8, NULL);
   if (ok != pdPASS) {
     ota->set_in_progress(false);
     return send_json_status(req, "started", false, "error", "Failed to start OTA task");

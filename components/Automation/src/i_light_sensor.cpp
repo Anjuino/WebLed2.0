@@ -31,6 +31,9 @@ void i_light_sensor::from_json(cJSON *json) {
     priority = j_priority->valueint;
   }
 
+  cJSON *j_active = cJSON_GetObjectItem(json, "is_active");
+  if (cJSON_IsBool(j_active)) is_active = cJSON_IsTrue(j_active);
+
   cJSON *action = cJSON_GetObjectItem(json, "action");
   if(action) {
     cJSON *j_dark = cJSON_GetObjectItem(action, "dark");
@@ -103,7 +106,16 @@ void i_light_sensor::start() {
 }
 
 void i_light_sensor::on_light(int value) {
-  last_value = value;      
+  if (!is_active) {
+    if (applied) {
+      ESP_LOGI(TAG, "источник отключён, отпускаю ленту");
+      dev->release(this);
+      applied = false;
+    }
+    return;
+  }
+
+  last_value = value;
   bool less_is_darker = dark < light;
   if (less_is_darker ? value <= dark : value >= dark) {
     is_dark = true;

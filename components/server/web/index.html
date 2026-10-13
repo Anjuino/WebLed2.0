@@ -225,9 +225,19 @@
   .pchip { position: absolute; transform: translate(-50%, -50%); padding: 3px 10px; border-radius: 20px; background: var(--surface);
            border: 1px solid var(--a1); font-size: 12px; font-weight: 550; white-space: nowrap; transition: left .3s; box-shadow: 0 2px 10px rgba(0,0,0,.4); }
   .ticks { display: flex; justify-content: space-between; font-size: 10px; color: var(--dim); margin-top: 4px; }
-  .autos { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 16px; margin-top: 16px; }
-  .acard { transition: border-color .3s, box-shadow .3s; }
+  .autos { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 16px; }
+  .acard { transition: border-color .3s, box-shadow .3s, opacity .2s; }
   .acard.owner { border-color: rgba(52, 211, 153, .5); box-shadow: 0 0 30px -10px rgba(52, 211, 153, .5); }
+  .acard.off { opacity: .55; }
+  .day-row { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; background: var(--surface-2); }
+  .day-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .day-head b { flex: 1; min-width: 120px; }
+  .iv-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; padding: 6px 8px; background: var(--surface); border-radius: 8px; }
+  .iv-row input[type=time] { width: 110px; }
+  .iv-row select { min-width: 90px; }
+  .iv-row input[type=range] { flex: 1; min-width: 100px; }
+  .iv-row input[type=color] { padding: 0; }
+  .day-toggle { min-width: 44px; font-weight: 600; }
   .ac-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
   .ac-head b { flex: 1; font-size: 16px; }
   .ac-icon { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; font-size: 19px; background: var(--surface-3); }
@@ -407,7 +417,7 @@
         <button class="btn" id="hManual" onclick="setManual(!ledInfo.settings.manual)"><i data-ic="hand"></i><span>Ручное управление</span></button>
         <a class="btn ghost" href="#/led">Настроить <i data-ic="arrow"></i></a>
       </div>
-      <label class="slider-row"><span>Яркость</span><input type="range" id="hBright" min="1" max="255"><b class="val" id="hBrightV"></b></label>
+      <label class="slider-row"><span>Яркость</span><input type="range" id="hBright" min="0" max="100"><b class="val" id="hBrightV"></b></label>
     </div>
   </div>
 
@@ -461,8 +471,8 @@
 
     <div class="card">
       <div class="card-h"><h3>Параметры</h3></div>
-      <label class="f"><span>Яркость</span><input type="range" id="ledBright" min="1" max="255"><b class="val" id="ledBrightV"></b></label>
-      <label class="f"><span>Скорость</span><input type="range" id="ledSpeed" min="0" max="255"><b class="val" id="ledSpeedV"></b></label>
+      <label class="f"><span>Яркость</span><input type="range" id="ledBright" min="0" max="100"><b class="val" id="ledBrightV"></b></label>
+      <label class="f"><span>Скорость</span><input type="range" id="ledSpeed" min="0" max="100"><b class="val" id="ledSpeedV"></b></label>
       <p class="muted small">Скорость влияет на анимированные режимы. При выключенном «Сразу применять» изменения уходят по кнопке.</p>
       <div class="row between mt">
         <button class="btn" onclick="togglePower()"><i data-ic="power"></i><span id="ledPowerT">Выключить</span></button>
@@ -503,6 +513,7 @@
     <div class="autos">
       <div class="card acard" id="ac-button"></div>
       <div class="card acard" id="ac-light_sensor"></div>
+      <div class="card acard" id="ac-schedule"></div>
     </div>
     <div class="savebar" id="saveBar">
       <span class="sb-t" id="sbText">Изменений нет</span>
@@ -647,8 +658,10 @@
 <div id="toasts"></div>
 
 <script>
+console.log('[WebLed] script v=schedule-7days-r4 loaded, time=' + new Date().toISOString());
+
 const $ = id => document.getElementById(id);
-const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const $$ = (s, r = document) => r ? [...r.querySelectorAll(s)] : [];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 let modes = [];
@@ -698,7 +711,7 @@ function recall(k) { try { return localStorage.getItem('webled.' + k); } catch (
 
 // заливка ползунка до текущего значения
 function paint(el) { el.style.setProperty('--p', ((el.value - el.min) / ((el.max - el.min) || 1) * 100) + '%'); }
-function paintAll(root = document) { $$('input[type=range]', root).forEach(paint); }
+function paintAll(root = document) { if (!root) return; $$('input[type=range]', root).forEach(paint); }
 document.addEventListener('input', e => { if (e.target.type === 'range') paint(e.target); });
 // ставим значение, только если пользователь сейчас не держит этот контрол
 function setVal(el, v) { if (el && el !== document.activeElement) { el.value = v; if (el.type === 'range') paint(el); } }
@@ -834,6 +847,7 @@ function modeOptions(sel) {
 }
 // раскрашивает кружок-превью (.prev) под режим: радуга крутится, скрипты пульсируют, 255 — погашен
 function applyPreview(el, mode, c, bright = 255, speed = 128) {
+  if (!el) return '';                                  // защита: элемент не найден — без падения
   const name = modeName(mode), f = Math.max(.18, bright / 255);
   const col = `rgb(${Math.round(c.r * f)},${Math.round(c.g * f)},${Math.round(c.b * f)})`;
   el.classList.remove('rainbow', 'pulse', 'off', 'pix');
@@ -872,7 +886,7 @@ async function loadLed() {
 }
 
 function hasAutomations() {
-  return !!(lastState && (lastState.button || lastState.light_sensor)) || !!(cfgOrig && (cfgOrig.button || cfgOrig.light_sensor));
+  return !!(lastState && (lastState.button || lastState.light_sensor || lastState.schedule)) || !!(cfgOrig && (cfgOrig.button || cfgOrig.light_sensor || cfgOrig.schedule));
 }
 
 function renderLed() {
@@ -892,8 +906,8 @@ function renderLed() {
   setVal($('ledColor'), h);
   $('ledHex').textContent = h.toUpperCase();
   $('ledRgb').textContent = `R ${s.color.r} · G ${s.color.g} · B ${s.color.b}`;
-  setVal($('ledBright'), s.brightness); $('ledBrightV').textContent = Math.round(s.brightness / 2.55) + '%';
-  setVal($('ledSpeed'), s.speed); $('ledSpeedV').textContent = s.speed;
+  setVal($('ledBright'), s.brightness); $('ledBrightV').textContent = s.brightness + '%';
+  setVal($('ledSpeed'), s.speed); $('ledSpeedV').textContent = s.speed + '%';
   $('ledPowerT').textContent = s.mode === 255 ? 'Включить' : 'Выключить';
   buildStrip();
 }
@@ -1040,13 +1054,13 @@ function renderHome() {
   document.querySelector('.hero').style.setProperty('--heroGlow', s.mode === 255 ? 'rgba(91,140,255,.06)' : col.replace('rgb', 'rgba').replace(')', ',.22)'));
   $('hMode').textContent = modeName(s.mode);
   $('hMeta').textContent = s.mode === 255 ? `Лента выключена · ${st.led_count} LED`
-    : `Яркость ${Math.round(s.brightness / 2.55)}% · скорость ${s.speed} · ${st.led_count} LED`;
+    : `Яркость ${s.brightness}% · скорость ${s.speed}% · ${st.led_count} LED`;
   $('hPower').querySelector('span').textContent = s.mode === 255 ? 'Включить' : 'Выключить';
   const mb = $('hManual');
   mb.classList.toggle('on', !!st.manual);
   mb.querySelector('span').textContent = st.manual ? 'Ручное: вкл' : 'Ручное управление';
   setVal($('hBright'), s.brightness);
-  $('hBrightV').textContent = Math.round(s.brightness / 2.55) + '%';
+  $('hBrightV').textContent = s.brightness + '%';
   renderHomeAutos();
 }
 
@@ -1067,9 +1081,16 @@ function renderTiles() {
     $('topTime').textContent = i.time ? i.time.slice(11) : '';
   }
   const ls = lastState && lastState.light_sensor;
-  $('tLight').textContent = ls ? ls.value : '—';
-  $('tLightS').textContent = ls ? (ls.is_dark ? '🌙 темно' : '☀ светло') + (ls.applied ? ' · лента включена датчиком' : '') : 'датчик не настроен';
-  $('tLightBar').style.width = ls ? Math.min(100, ls.value / 4095 * 100) + '%' : '0';
+  const lsActive = cfgOrig && cfgOrig.light_sensor && cfgOrig.light_sensor.is_active !== false;
+  if (!ls || !lsActive) {
+    $('tLight').textContent = '—';
+    $('tLightS').textContent = !ls ? 'датчик не настроен' : '🚫 датчик не активен';
+    $('tLightBar').style.width = '0';
+  } else {
+    $('tLight').textContent = ls.value;
+    $('tLightS').textContent = (ls.is_dark ? '🌙 темно' : '☀ светло') + (ls.applied ? ' · лента включена датчиком' : '');
+    $('tLightBar').style.width = Math.min(100, ls.value / 4095 * 100) + '%';
+  }
   if (netInfo) {
     const sta = netInfo.mode && netInfo.mode.includes('STA');
     $('tNet').textContent = sta ? (netInfo.sta_ssid || 'STA') : (netInfo.ap_ssid || netInfo.mode || '—');
@@ -1082,12 +1103,29 @@ function renderHomeAutos() {
   $('hAutos').innerHTML = Object.keys(AUTO).map(k => {
     const A = AUTO[k], c = cfgOrig && cfgOrig[k];
     if (!c) return `<a class="arow" href="#/auto"><div class="arow-ic">${A.icon}</div><div class="arow-b"><b>${A.title}</b><span>не настроена — нажмите, чтобы настроить</span></div><span class="badge">выкл</span></a>`;
-    const a = c.action || {}, t = a.time;
-    const when = t ? `${hm(t.start)}–${hm(t.end)}` : 'круглосуточно';
-    const what = k === 'button' ? `держит ${human(a.hold || 0)}` : `темно ${a.dark < a.light ? '≤' : '≥'} ${a.dark}, светло ${a.dark < a.light ? '≥' : '≤'} ${a.light}`;
+    let when = 'круглосуточно', what = '—', ledInfo2 = null;
+    if (k === 'schedule') {
+      const days = c.days || [];
+      const today = new Date().getDay();
+      const todayDay = days.find(x => x.day === today);
+      const intervals = todayDay ? (todayDay.intervals || []) : [];
+      if (intervals.length === 0) { when = 'сегодня пусто'; what = `${days.length} дн. в расписании`; }
+      else {
+        when = intervals.map(iv => `${hm(iv.start)}–${hm(iv.stop)}`).join(', ');
+        what = `сегодня ${intervals.length} интервалов`;
+      }
+      ledInfo2 = intervals[0] && intervals[0].led;
+    } else {
+      const a = c.action || {}, t = a.time;
+      when = t ? `${hm(t.start)}–${hm(t.end)}` : 'круглосуточно';
+      what = k === 'button' ? `держит ${human(a.hold || 0)}`
+           : `темно ${a.dark < a.light ? '≤' : '≥'} ${a.dark}, светло ${a.dark < a.light ? '≥' : '≤'} ${a.light}`;
+      ledInfo2 = a.led;
+    }
     const st = autoStatus(k);
-    return `<a class="arow ${owner === k ? 'owner' : ''}" href="#/auto"><div class="arow-ic">${A.icon}</div>
-      <div class="arow-b"><b>${A.title}</b><span>${esc(what)} · ${when} · «${esc(modeName((a.led || {}).mode))}»</span></div>
+    const mode = (ledInfo2 || {}).mode;
+    return `<a class="arow ${owner === k && c.is_active !== false ? 'owner' : ''}" href="#/auto"><div class="arow-ic">${A.icon}</div>
+      <div class="arow-b"><b>${A.title}</b><span>${esc(what)} · ${when} · «${esc(modeName(mode))}»</span></div>
       <span class="${st.cls}">${st.txt}</span></a>`;
   }).join('');
 }
@@ -1323,18 +1361,31 @@ $('fText').addEventListener('keydown', e => {
 const AUTO = {
   button: {
     title: 'Кнопка', icon: '🔘',
-    defaults: { priority: 100, action: { hold: 180,
-      led: { mode: 254, speed: 128, brightness: 255, color: { r: 255, g: 255, b: 255 } } } }
+    defaults: { is_active: true, priority: 100, action: { hold: 180,
+      led: { mode: 254, speed: 128, brightness: 100, color: { r: 255, g: 255, b: 255 } } } }
   },
   light_sensor: {
     title: 'Датчик света', icon: '🌙',
-    defaults: { priority: 20, action: { dark: 300, light: 800,
+    defaults: { is_active: true, priority: 20, action: { dark: 300, light: 800,
       time: { start: { hour: 18, minute: 0 }, end: { hour: 8, minute: 0 } },
-      led: { mode: 254, speed: 128, brightness: 200, color: { r: 255, g: 180, b: 80 } } } }
+      led: { mode: 254, speed: 128, brightness: 80, color: { r: 255, g: 180, b: 80 } } } }
+  },
+  schedule: {
+    title: 'Расписание', icon: '⏰',
+    defaults: { is_active: true, priority: 15, days: [] }
   }
 };
 const ADC_MAX = 4095;
 const HOLD_PRESETS = [10, 30, 60, 180, 300, 600, 1800];
+const DAY_NAMES = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
+const DAY_SHORT = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+const MAX_DAYS = 7;
+const MAX_INTERVALS = 5;
+const DEFAULT_IV = {
+  start: { hour: 9, minute: 0 },
+  stop:  { hour: 23, minute: 0 },
+  led: { mode: 254, speed: 100, brightness: 80, color: { r: 255, g: 180, b: 80 } }
+};
 let cfgOrig = null, cfg = {};
 
 const getPath = (o, p) => p.split('.').reduce((a, k) => a == null ? a : a[k], o);
@@ -1363,6 +1414,7 @@ function nowMinutes() {
 function autoStatus(k) {
   const manual = ledInfo && ledInfo.settings.manual;
   if (!cfgOrig || !cfgOrig[k]) return { txt: 'новая', cls: 'badge warn' };
+  if (cfg[k].is_active === false) return { txt: 'выкл', cls: 'badge' };
   if (manual) return { txt: 'на паузе', cls: 'badge warn' };
   if (!lastState) return { txt: '…', cls: 'badge' };
   let txt, cls = 'badge';
@@ -1376,6 +1428,25 @@ function autoStatus(k) {
 // недостающие поля дополняем значениями по умолчанию, чтобы у каждого поля было значение
 function normalize(k) {
   const c = cfg[k], d = AUTO[k].defaults;
+  if (c.is_active == null) c.is_active = d.is_active;
+  if (k === 'schedule') {
+    c.priority = c.priority ?? d.priority;
+    c.days = Array.isArray(c.days) ? c.days : [];
+    c.days.forEach(day => {
+      if (typeof day.day !== 'number' || day.day < 0 || day.day > 6) return;
+      day.intervals = Array.isArray(day.intervals) ? day.intervals : [];
+      day.intervals.forEach(iv => {
+        iv.start = iv.start || { hour: 9, minute: 0 };
+        iv.stop  = iv.stop  || { hour: 23, minute: 0 };
+        iv.led = iv.led || {};
+        iv.led.mode = iv.led.mode ?? 254;
+        iv.led.speed = iv.led.speed ?? 100;
+        iv.led.brightness = iv.led.brightness ?? 80;
+        iv.led.color = iv.led.color || { r: 255, g: 180, b: 80 };
+      });
+    });
+    return;
+  }
   if (c.priority == null) c.priority = d.priority;
   c.action = c.action || {};
   c.action.led = Object.assign({}, d.action.led, c.action.led);
@@ -1395,6 +1466,17 @@ function cardHtml(k) {
       <button class="btn primary" data-add="${k}"><i data-ic="plus"></i>Настроить</button></div>`;
   }
   normalize(k);
+
+  const active = cfg[k].is_active !== false;
+  const acHead = `<div class="ac-head"><span class="ac-icon">${A.icon}</span><b>${A.title}</b>
+      <span class="badge" data-badge="${k}"></span>
+      <label class="sw" title="Включён"><input type="checkbox" data-active="${k}" ${active ? 'checked' : ''}><span></span></label>
+      ${cfgOrig && cfgOrig[k] ? '' : `<button class="btn icon ghost" data-remove="${k}" title="Не добавлять">✕</button>`}</div>`;
+
+  if (k === 'schedule') {
+    return acHead + scheduleCardHtml();
+  }
+
   const a = cfg[k].action, t = a.time, p = k + '.action.led';
 
   let specific;
@@ -1404,7 +1486,7 @@ function cardHtml(k) {
       <div class="chips">${HOLD_PRESETS.map(s => `<button class="chip" data-hold="${s}">${human(s)}</button>`).join('')}</div>
       <label class="f"><span>Секунд</span><input type="number" min="1" data-k="button.action.hold"></label>
       <div class="muted small">Повторное нажатие продлевает время.</div></div>`;
-  } else {
+  } else if (k === 'light_sensor') {
     specific = `<div class="grp">
       <div class="grp-t">Пороги освещённости <span class="muted">АЦП 0…${ADC_MAX}</span></div>
       <div class="lscale" data-lscale>
@@ -1419,10 +1501,7 @@ function cardHtml(k) {
       <div class="row mt"><button class="btn sm" data-lcur="dark">Текущее → «темно»</button><button class="btn sm" data-lcur="light">Текущее → «светло»</button></div></div>`;
   }
 
-  return `<div class="ac-head"><span class="ac-icon">${A.icon}</span><b>${A.title}</b>
-      <span class="badge" data-badge="${k}"></span>
-      ${cfgOrig && cfgOrig[k] ? '' : `<button class="btn icon ghost" data-remove="${k}" title="Не добавлять">✕</button>`}</div>
-    <div class="grp">
+  return acHead + `<div class="grp">
       <div class="grp-t">Приоритет <span class="big" data-show="${k}.priority"></span></div>
       <input type="range" min="0" max="255" data-k="${k}.priority" style="width:100%">
     </div>
@@ -1443,8 +1522,8 @@ function cardHtml(k) {
         <div class="swwrap"><div class="swatch prev" data-swatch="${k}"></div><span class="muted" data-mname="${k}"></span></div>
         <div class="ledctl">
           <select data-k="${p}.mode">${modeOptions(a.led.mode)}</select>
-          <label class="f"><span>Яркость</span><input type="range" min="1" max="255" data-k="${p}.brightness"><span class="val" data-show="${p}.brightness"></span></label>
-          <label class="f"><span>Скорость</span><input type="range" min="1" max="255" data-k="${p}.speed"><span class="val" data-show="${p}.speed"></span></label>
+          <label class="f"><span>Яркость</span><input type="range" min="0" max="100" data-k="${p}.brightness"><span class="val" data-show="${p}.brightness"></span></label>
+          <label class="f"><span>Скорость</span><input type="range" min="0" max="100" data-k="${p}.speed"><span class="val" data-show="${p}.speed"></span></label>
           <label class="f"><span>Цвет</span><input type="color" data-k="${p}.color" style="width:44px;height:32px"><span class="muted small" data-show="${p}.color"></span></label>
         </div>
       </div>
@@ -1452,10 +1531,100 @@ function cardHtml(k) {
     </div>`;
 }
 
+function scheduleCardHtml() {
+  const s = cfg.schedule || { days: [] };
+  const days = s.days || [];
+  const dayToggles = DAY_SHORT.map((n, i) => {
+    const inSched = days.some(x => x.day === i);
+    return `<button class="btn sm day-toggle ${inSched ? 'sel' : ''}" data-day-toggle="${i}">${n}</button>`;
+  }).join('');
+  const daysHtml = days.length === 0
+    ? '<div class="muted small" style="padding:10px 0">Нет дней — кликни по кнопке выше или «Загрузить пример».</div>'
+    : days.map((day, di) => dayRowHtml(di, day)).join('');
+  return `<div class="grp">
+    <div class="grp-t">Приоритет <span class="big" data-show="schedule.priority"></span></div>
+    <input type="range" min="0" max="255" data-k="schedule.priority" style="width:100%">
+  </div>
+  <div class="grp">
+    <div class="grp-t">Дни недели <span class="muted small">клик — добавить / убрать</span></div>
+    <div data-day-toggles>${dayToggles}</div>
+    <div class="row mt">
+      <button class="btn sm" data-load-sample>Загрузить пример (Пн–Пт 9:00–23:00)</button>
+    </div>
+    <div class="muted small">До ${MAX_DAYS} дней, до ${MAX_INTERVALS} интервалов в каждом. start &lt; stop — внутри дня, start &gt; stop — через полночь.</div>
+  </div>
+  <div class="grp">
+    <div class="grp-t">Интервалы</div>
+    <div data-days-list>${daysHtml}</div>
+  </div>`;
+}
+
+function renderDayToggles() {
+  const wrap = document.querySelector('[data-day-toggles]');
+  if (!wrap || !cfg.schedule) return;
+  const days = cfg.schedule.days || [];
+  wrap.innerHTML = DAY_SHORT.map((n, i) => {
+    const inSched = days.some(x => x.day === i);
+    return `<button class="btn sm day-toggle ${inSched ? 'sel' : ''}" data-day-toggle="${i}">${n}</button>`;
+  }).join('');
+}
+
+function renderScheduleDays() {
+  const list = document.querySelector('[data-days-list]');
+  console.log('[WebLed] renderScheduleDays: list=' + (list ? 'found' : 'NULL') + ', cfg.schedule=' + (cfg.schedule ? 'set' : 'NULL') + ', days=' + (cfg.schedule ? JSON.stringify(cfg.schedule.days || []) : 'n/a'));
+  if (!list || !cfg.schedule) return;
+  const days = cfg.schedule.days || [];
+  list.innerHTML = days.length === 0
+    ? '<div class="muted small" style="padding:10px 0">Нет дней — кликни по кнопке выше.</div>'
+    : days.map((day, di) => dayRowHtml(di, day)).join('');
+  icons(list);
+  paintAll(list);
+}
+
+function dayRowHtml(di, day) {
+  const intervals = day.intervals || [];
+  const canAdd = intervals.length < MAX_INTERVALS;
+  return `<div class="day-row" data-day-row="${di}">
+    <div class="day-head">
+      <b>${DAY_NAMES[day.day] || '?'}</b>
+      <span class="muted small">${intervals.length} из ${MAX_INTERVALS}</span>
+      <button class="btn sm ghost" data-rm-day="${di}" title="удалить день"><i data-ic="trash"></i></button>
+    </div>
+    <div class="iv-list" data-iv-list="${di}">${intervals.map((iv, ii) => ivRowHtml(di, ii, iv)).join('')}</div>
+    ${canAdd
+      ? `<div class="row mt"><button class="btn sm" data-add-iv="${di}"><i data-ic="plus"></i>добавить интервал</button></div>`
+      : `<div class="muted small mt">Достигнут лимит (${MAX_INTERVALS})</div>`}
+  </div>`;
+}
+
+function ivRowHtml(di, ii, iv) {
+  const led = iv.led || { mode: 254, speed: 100, brightness: 80, color: { r: 255, g: 180, b: 80 } };
+  const color = led.color || { r: 255, g: 180, b: 80 };
+  return `<div class="iv-row" data-iv-row="${di}-${ii}">
+    <input type="time" data-iv-d="${di}" data-iv-i="${ii}" data-iv-field="start" value="${hm(iv.start)}" title="начало">
+    <span class="muted">—</span>
+    <input type="time" data-iv-d="${di}" data-iv-i="${ii}" data-iv-field="stop" value="${hm(iv.stop)}" title="конец">
+    <select data-iv-d="${di}" data-iv-i="${ii}" data-iv-field="led.mode" title="режим">${modeOptions(led.mode)}</select>
+    <input type="range" min="0" max="100" data-iv-d="${di}" data-iv-i="${ii}" data-iv-field="led.brightness" value="${led.brightness}" title="яркость ${led.brightness}">
+    <input type="range" min="0" max="100" data-iv-d="${di}" data-iv-i="${ii}" data-iv-field="led.speed" value="${led.speed}" title="скорость ${led.speed}">
+    <input type="color" data-iv-d="${di}" data-iv-i="${ii}" data-iv-field="led.color" value="${hex(color.r, color.g, color.b)}" title="цвет" style="width:36px;height:30px">
+    <button class="btn sm ghost" data-rm-iv="${di}-${ii}" title="удалить интервал">✕</button>
+  </div>`;
+}
+
 function renderAuto() {
-  Object.keys(AUTO).forEach(k => $('ac-' + k).innerHTML = cardHtml(k));
-  icons($('autoSec'));
-  updateAuto();
+  Object.keys(AUTO).forEach(k => {
+    try { $('ac-' + k).innerHTML = cardHtml(k); }
+    catch (e) { console.error('cardHtml(' + k + ') failed:', e); $('ac-' + k).innerHTML = '<div class="empty">Ошибка рендера: ' + esc(String(e)) + '</div>'; }
+  });
+  try { icons($('autoSec')); } catch (e) { console.error('icons failed:', e); }
+  try { renderDayToggles(); } catch (e) { console.error('renderDayToggles failed:', e); }
+  try { renderScheduleDays(); } catch (e) { console.error('renderScheduleDays failed:', e); }
+  try { updateAuto(); } catch (e) { console.error('updateAuto failed:', e); }
+}
+
+// превью ленты для расписания
+function scheduleSwatch() {        // оставлено для совместимости, но больше не используется
 }
 
 function fmtShow(path, v) {
@@ -1482,15 +1651,26 @@ function updateAuto() {
   const owner = lastState ? lastState.current_owner : null;
   Object.keys(AUTO).forEach(k => {
     const card = $('ac-' + k), c = cfg[k];
-    card.classList.toggle('owner', !!c && owner === k && !(ledInfo && ledInfo.settings.manual));
+    const isOff = !!c && c.is_active === false;
+    card.classList.toggle('owner', !!c && owner === k && !isOff && !(ledInfo && ledInfo.settings.manual));
+    card.classList.toggle('off', isOff);
     if (!c) return;
-    const a = c.action;
 
     const st = autoStatus(k), b = card.querySelector('[data-badge]');
-    b.className = st.cls; b.textContent = st.txt;
+    if (b) { b.className = st.cls; b.textContent = st.txt; }
+
+    if (k === 'schedule') {
+      // структуру не пересоздаём — иначе фокус в полях времени/цвета теряется;
+      // renderScheduleDays() вызывается только при add/remove день/интервал
+      const list = $('[data-days-list]');
+      if (list) paintAll(list);
+      return;
+    }
+
+    const a = c.action, t = a.time, p = k + '.action.led';
 
     // время
-    const t = a.time, now = nowMinutes();
+    const now = nowMinutes();
     let segs = [[0, 1440]];
     if (t) {
       const s = tmin(t.start), e = tmin(t.end);
@@ -1529,16 +1709,26 @@ function updateAuto() {
     }
   });
 
-  // приоритеты
-  const present = Object.keys(AUTO).filter(k => cfg[k]);
-  $('prioScale').innerHTML = present.map((k, i) =>
-    `<div class="pchip" style="left:${Math.max(10, Math.min(90, cfg[k].priority / 2.55))}%;top:${present.length > 1 ? (i ? 72 : 28) : 50}%">${AUTO[k].icon} ${AUTO[k].title} · ${cfg[k].priority}</div>`).join('')
-    || '<div class="empty" style="padding:14px">Нет настроенных автоматик</div>';
+  // приоритеты — показываем только активные (и сконфигурированные)
+  const present = Object.keys(AUTO).filter(k => cfg[k] && cfg[k].is_active !== false);
+  $('prioScale').innerHTML = present.length === 0
+    ? '<div class="empty" style="padding:14px">Нет активных автоматик</div>'
+    : present.map((k, i) => {
+        const left = Math.max(10, Math.min(90, cfg[k].priority / 2.55));
+        const top = present.length === 1 ? 50 : 20 + (i * 60) / (present.length - 1);
+        return `<div class="pchip" style="left:${left}%;top:${top}%">${AUTO[k].icon} ${AUTO[k].title} · ${cfg[k].priority}</div>`;
+      }).join('');
   let pt = 'ручное управление ставит всех на паузу';
   if (present.length === 2) {
     const [x, y] = present.map(k => cfg[k]), [nx, ny] = present.map(k => AUTO[k].title);
     pt = x.priority === y.priority ? `равны — светит тот, кто захватил первым · ${pt}`
        : `${x.priority > y.priority ? nx : ny} перебивает ${x.priority > y.priority ? ny : nx} · ${pt}`;
+  } else if (present.length === 3) {
+    const sorted = present.slice().sort((a, b) => cfg[b].priority - cfg[a].priority).map(k => AUTO[k].title);
+    pt = sorted.join(' › ') + ' · ' + pt;
+  } else if (present.length > 3) {
+    const sorted = present.slice().sort((a, b) => cfg[b].priority - cfg[a].priority).map(k => AUTO[k].title);
+    pt = sorted.join(' › ') + ' · ' + pt;
   }
   $('prioText').textContent = pt;
 
@@ -1559,26 +1749,51 @@ function inputValue(el) {
 
 $('autoSec').addEventListener('input', e => {
   const el = e.target, d = el.dataset;
-  if (d.k) {
-    const v = inputValue(el);
-    if (v === null || el.value === '') return;
-    setPath(cfg, d.k, v);
-  } else if (d.time) {
-    const a = cfg[d.time].action;
-    if (el.checked) a.time = a.time || { start: { hour: 18, minute: 0 }, end: { hour: 8, minute: 0 } };
-    else delete a.time;
-    const card = $('ac-' + d.time);
-    card.querySelector('[data-trow]').hidden = !el.checked;
-    if (a.time) {
-      card.querySelector('[data-tpart$=".start"]').value = hm(a.time.start);
-      card.querySelector('[data-tpart$=".end"]').value = hm(a.time.end);
-    }
-  } else if (d.tpart) {
-    if (!el.value) return;
-    const [k, part] = d.tpart.split('.'), [h, m] = el.value.split(':');
-    cfg[k].action.time[part] = { hour: +h, minute: +m };
-  } else return;
-  updateAuto();
+  try {
+    if (d.k) {
+      const v = inputValue(el);
+      if (v === null || el.value === '') return;
+      setPath(cfg, d.k, v);
+    } else if (d.time) {
+      const a = cfg[d.time].action;
+      if (el.checked) a.time = a.time || { start: { hour: 18, minute: 0 }, end: { hour: 8, minute: 0 } };
+      else delete a.time;
+      const card = $('ac-' + d.time);
+      card.querySelector('[data-trow]').hidden = !el.checked;
+      if (a.time) {
+        card.querySelector('[data-tpart$=".start"]').value = hm(a.time.start);
+        card.querySelector('[data-tpart$=".end"]').value = hm(a.time.end);
+      }
+    } else if (d.tpart) {
+      if (!el.value) return;
+      const ks = d.tpart.split('.'), last = ks.pop();
+      const obj = ks.reduce((a, k) => (a[k] = a[k] && typeof a[k] === 'object' ? a[k] : {}), cfg);
+      const [h, m] = el.value.split(':');
+      obj[last] = { hour: +h, minute: +m };
+    } else if (d.ivD != null && d.ivI != null && d.ivField) {
+      // поле внутри интервала расписания
+      if (!cfg.schedule) return;
+      const day = cfg.schedule.days[+d.ivD];
+      if (!day) return;
+      const iv = day.intervals[+d.ivI];
+      if (!iv) return;
+      if (el.type === 'time') {
+        if (!el.value) return;
+        const [h, m] = el.value.split(':');
+        setPath(iv, d.ivField, { hour: +h, minute: +m });
+      } else {
+        const v = inputValue(el);
+        if (v === null) return;
+        setPath(iv, d.ivField, v);
+      }
+    } else if (d.active) {
+      if (cfg[d.active]) cfg[d.active].is_active = el.checked;
+    } else return;
+  } catch (err) {
+    console.error('autoSec input handler:', err);
+    return;
+  }
+  try { updateAuto(); } catch (err) { console.error('updateAuto after input:', err); }
 });
 
 $('autoSec').addEventListener('click', async e => {
@@ -1593,6 +1808,51 @@ $('autoSec').addEventListener('click', async e => {
     if (cur < 0) return toast('Нет текущего значения датчика', 'warn');
     cfg.light_sensor.action[d.lcur] = cur;
     updateAuto();
+  } else if (d.dayToggle != null) {
+    console.log('[WebLed] dayToggle click, wday=' + d.dayToggle + ', cfg.schedule.days before:', JSON.stringify(cfg.schedule && cfg.schedule.days));
+    if (!cfg.schedule) return;
+    const wday = +d.dayToggle;
+    cfg.schedule.days = cfg.schedule.days || [];
+    const idx = cfg.schedule.days.findIndex(x => x.day === wday);
+    if (idx >= 0) {
+      cfg.schedule.days.splice(idx, 1);                // уже есть — убираем
+    } else {
+      if (cfg.schedule.days.length >= MAX_DAYS) return toast('Максимум ' + MAX_DAYS + ' дней', 'warn');
+      cfg.schedule.days.push({ day: wday, intervals: [clone(DEFAULT_IV)] });
+    }
+    try { renderDayToggles(); } catch (e) { console.error('renderDayToggles:', e); }
+    try { renderScheduleDays(); } catch (e) { console.error('renderScheduleDays:', e); }
+    try { updateAuto(); } catch (e) { console.error('updateAuto:', e); }
+  } else if (d.addIv != null) {
+    if (!cfg.schedule) return;
+    const day = cfg.schedule.days[+d.addIv];
+    if (!day) return;
+    if ((day.intervals || []).length >= MAX_INTERVALS) return toast('Максимум ' + MAX_INTERVALS + ' интервалов', 'warn');
+    day.intervals = day.intervals || [];
+    day.intervals.push(clone(DEFAULT_IV));
+    renderScheduleDays();
+    updateAuto();
+  } else if (d.rmDay != null) {
+    if (!cfg.schedule) return;
+    cfg.schedule.days.splice(+d.rmDay, 1);
+    renderDayToggles();
+    renderScheduleDays();
+    updateAuto();
+  } else if (d.rmIv) {
+    if (!cfg.schedule) return;
+    const [di, ii] = d.rmIv.split('-').map(Number);
+    const day = cfg.schedule.days[di];
+    if (!day) return;
+    day.intervals.splice(ii, 1);
+    renderScheduleDays();
+    updateAuto();
+  } else if (d.loadSample) {
+    if (!cfg.schedule) return;
+    cfg.schedule.days = [1, 2, 3, 4, 5].map(d => ({ day: d, intervals: [clone(DEFAULT_IV)] }));
+    renderDayToggles();
+    renderScheduleDays();
+    updateAuto();
+    toast('Загружен пример: Пн–Пт 9:00–23:00', 'ok');
   } else if (d.try) {
     const led = cfg[d.try].action.led;
     const r = await postLed({ state: clone(led) });
@@ -1603,10 +1863,9 @@ $('autoSec').addEventListener('click', async e => {
 async function loadConfig() {
   const r = await api('GET', '/api/device?config=');
   if (!r.data) return toast('Автоматика: ' + errText(r), 'err');
-  cfgOrig = r.data;
+  cfgOrig = clone(r.data);
   cfg = clone(r.data);
   renderAuto();
-  // normalize дописал поля по умолчанию — считаем это исходным состоянием, а не правкой
   cfgOrig = clone(cfg);
   updateAuto();
   renderHomeAutos();
@@ -1630,10 +1889,31 @@ function validateConfig() {
   Object.keys(AUTO).forEach(k => {
     const c = cfg[k];
     if (!c) return;
-    const led = c.action.led, T = AUTO[k].title;
-    // прошивка игнорирует нулевые mode/speed/brightness (from_json требует > 0)
-    ['mode', 'speed', 'brightness'].forEach(f => { if (!(led[f] > 0)) errs.push(`${T}: ${f} должен быть > 0`); });
+    const T = AUTO[k].title;
     if (c.priority < 0 || c.priority > 255) errs.push(`${T}: приоритет 0…255`);
+    if (k === 'schedule') {
+      const days = c.days || [];
+      if (days.length > MAX_DAYS) errs.push(`${T}: максимум ${MAX_DAYS} дней`);
+      days.forEach((day, di) => {
+        if (typeof day.day !== 'number' || day.day < 0 || day.day > 6) {
+          errs.push(`${T}: день #${di} — неверный номер (0…6)`);
+          return;
+        }
+        const intervals = day.intervals || [];
+        if (intervals.length > MAX_INTERVALS) errs.push(`${T}: ${DAY_NAMES[day.day]} — максимум ${MAX_INTERVALS} интервалов`);
+        intervals.forEach((iv, ii) => {
+          const led = iv.led || {};
+          if (led.brightness != null && (led.brightness < 0 || led.brightness > 100)) errs.push(`${T}: ${DAY_NAMES[day.day]} интервал ${ii + 1} — яркость 0…100`);
+          if (led.speed != null && (led.speed < 0 || led.speed > 100)) errs.push(`${T}: ${DAY_NAMES[day.day]} интервал ${ii + 1} — скорость 0…100`);
+        });
+      });
+      return;
+    }
+    const led = c.action.led;
+    ['mode', 'speed', 'brightness'].forEach(f => {
+      if (f === 'mode') { if (!(led.mode >= 0)) errs.push(`${T}: ${f} должен быть числом`); return; }
+      if (led[f] < 0 || led[f] > 100) errs.push(`${T}: ${f} 0…100`);
+    });
     if (k === 'button' && !(c.action.hold > 0)) errs.push(`${T}: время удержания > 0`);
     if (k === 'light_sensor' && c.action.dark === c.action.light) errs.push(`${T}: пороги «темно» и «светло» совпадают`);
   });
@@ -1645,7 +1925,16 @@ async function saveConfig() {
   const errs = validateConfig();
   if (errs.length) return toast(errs[0], 'err');
   if (!await ask('Сохранить автоматику?', 'Конфиг запишется в память устройства, после чего оно перезагрузится.', 'Сохранить')) return;
-  const r = await api('POST', '/api/device', cfg);
+  const body = {};
+  ['button', 'light_sensor'].forEach(k => { if (cfg[k]) body[k] = cfg[k]; });
+  if (cfg.schedule) {
+    body.schedule = {
+      is_active: cfg.schedule.is_active !== false,
+      priority: cfg.schedule.priority,
+      days: cfg.schedule.days || []
+    };
+  }
+  const r = await api('POST', '/api/device', body);
   if (r.ok) waitReboot();
   else toast('Автоматика: ' + errText(r), 'err');
 }

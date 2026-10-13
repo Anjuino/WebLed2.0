@@ -33,6 +33,9 @@ void i_button::from_json(cJSON *json) {
     priority = j_priority->valueint;
   }
 
+  cJSON *j_active = cJSON_GetObjectItem(json, "is_active");
+  if (cJSON_IsBool(j_active)) is_active = cJSON_IsTrue(j_active);
+
   cJSON *action = cJSON_GetObjectItem(json, "action");
   if(action) {
     cJSON *j_hold = cJSON_GetObjectItem(action, "hold");
@@ -100,6 +103,11 @@ void i_button::start() {
 }
 
 void i_button::on_press() {
+  if (!is_active) {
+    ESP_LOGI(TAG, "press: источник отключён, игнор");
+    return;
+  }
+
   if (!in_active_time()) {
     ESP_LOGI(TAG, "press: вне времени активности");
     return;

@@ -29,6 +29,8 @@ class Automation {
     std::string name;
     device *dev = nullptr;
 
+    bool is_active = true;                          // сохранённый флаг «включён» — читается из JSON
+
     // окно активности, минуты от полуночи
     bool has_active_time = false;
     uint16_t active_start = 0;
@@ -47,6 +49,8 @@ class Automation {
 
     uint8_t get_priority() { return priority; };
     std::string get_name() { return name; };
+    bool get_active() { return is_active; };
+    void set_active(bool on) { is_active = on; };
 };
 
 #endif // AUTOMATION_H

@@ -5,6 +5,7 @@
 #define KEY_VERSION "ver_cfg"
 #define KEY_BUTTON_CONFIG "btn_cfg"
 #define KEY_LIGHT_SENSOR_CONFIG "light_cfg"
+#define KEY_SCHEDULE_CONFIG "schedule_cfg"
 
 #include <memory>
 #include "nvs_proxy.h"

@@ -1,6 +1,8 @@
 #include "device.h"
+#include "version.h"
 #include "i_button.h"
 #include "i_light_sensor.h"
+#include "i_schedule.h"
 #include <algorithm>
 #include <math.h>
 #include "esp_log.h"
@@ -39,6 +41,18 @@ device::device() : settings(STORAGE_DEVICE, false)
       cJSON_Delete(cfg);
       sensor->start();
       automations.push_back(std::move(sensor));
+    }
+  }
+
+  std::string raw3 = settings.get(KEY_SCHEDULE_CONFIG, "");
+  if (!raw3.empty()) {
+    cJSON *cfg = cJSON_Parse(raw3.c_str());
+    if (cfg) {
+      auto schedule = std::make_unique<i_schedule>(this);
+      schedule->from_json(cfg);
+      cJSON_Delete(cfg);
+      schedule->start();
+      automations.push_back(std::move(schedule));
     }
   }
 }
@@ -83,6 +97,17 @@ static esp_err_t api_device_handler_post(httpd_req_t *req) {
       }
     }
 
+    cJSON *json_schedule = cJSON_GetObjectItem(root, "schedule");
+    if(cJSON_IsObject(json_schedule)) {
+      char *str = cJSON_PrintUnformatted(json_schedule);
+      if(str) {
+        if(contorller->settings.set(KEY_SCHEDULE_CONFIG, str)) {
+          need_commit = true;
+        }
+        free(str);
+      }
+    }
+
     if(need_commit) {
       contorller->settings.commit();
       ESP_LOGI(TAG, "Сохранил изменения");
@@ -110,6 +135,10 @@ static esp_err_t api_device_handler_get(httpd_req_t *req) {
     cJSON *light_sensor = cJSON_Parse(raw_light.c_str());
     if (light_sensor) cJSON_AddItemToObject(root, "light_sensor", light_sensor);
 
+    std::string raw_schedule = contorller->settings.get(KEY_SCHEDULE_CONFIG, "");
+    cJSON *schedule = cJSON_Parse(raw_schedule.c_str());
+    if (schedule) cJSON_AddItemToObject(root, "schedule", schedule);
+
     return send_resp_json(root, req);
   }
 
@@ -134,6 +163,8 @@ static esp_err_t api_device_handler_get(httpd_req_t *req) {
 
     std::string time_str = contorller->t_time.get_str_current_time();
     cJSON_AddStringToObject(root, "time", time_str.c_str());
+
+    cJSON_AddStringToObject(root, "version", firmware_version());
 
     return send_resp_json(root, req);
   }
