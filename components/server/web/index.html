@@ -580,6 +580,7 @@
         <div class="seg" id="netSeg"><button data-seg="sta" class="active">Клиент</button><button data-seg="ap">Точка доступа</button></div></div>
       <label class="f"><span>SSID</span><input type="text" id="netSsid" placeholder="имя сети"></label>
       <label class="f"><span>Пароль</span><span class="pw"><input type="password" id="netPass" placeholder="пароль"><button class="btn icon" onclick="togglePw('netPass', this)" title="Показать"><i data-ic="eye"></i></button></span></label>
+      <label class="f"><span>mDNS имя</span><div class="mdns-row"><input type="text" id="netMdns" placeholder="myled" maxlength="15" pattern="[A-Za-z0-9_\-]+"><span class="muted small">.local</span></div><small class="muted">Только буквы, цифры, _ и - (до 15 символов). Суффикс .local припишется автоматически.</small></label>
       <p class="muted small" id="netHint">Устройство подключится к роутеру. После перезагрузки оно может получить новый IP.</p>
       <div class="row between">
         <span></span>
@@ -1206,6 +1207,8 @@ async function loadNet() {
   let kv = '';
   if (n.sta_ssid !== undefined) kv += `<span>Сеть (STA)</span><span>${esc(n.sta_ssid || '—')}</span><span>Пароль STA</span><span data-secret="${esc(n.sta_password || '')}">••••••••</span>`;
   if (n.ap_ssid !== undefined) kv += `<span>Точка (AP)</span><span>${esc(n.ap_ssid || '—')}</span><span>Пароль AP</span><span data-secret="${esc(n.ap_password || '')}">••••••••</span>`;
+  if (n.mdns !== undefined) kv += `<span>mDNS имя</span><span>${esc(n.mdns || '—')}.local</span>`;
+  if (n.mdns !== undefined) $('netMdns').value = n.mdns || '';
   $('nKv').innerHTML = kv + '<span></span><span><button class="btn sm ghost" id="showSecrets">Показать пароли</button></span>';
   renderTiles();
 }
@@ -1264,8 +1267,15 @@ async function applyNet() {
   const what = netMode === 'sta' ? `подключиться к «${ssid}»` : `поднять точку доступа «${ssid}»`;
   if (!await ask('Сменить подключение?', `Устройство перезагрузится и попробует ${what}. Если что-то пойдёт не так, страница станет недоступна по текущему адресу.`, 'Применить', true)) return;
   const body = { mode: netMode, [netMode]: { [netMode + '_ssid']: ssid, [netMode + '_password']: pass } };
+  const mdnsVal = $('netMdns').value.trim();
+  if (mdnsVal) body.mdns = mdnsVal;
   const r = await api('POST', '/api/network', body);
-  if (r.ok) waitReboot(netMode === 'sta' ? 'Устройство может получить новый IP — тогда откройте его по mDNS-имени или новому адресу.' : `Подключитесь к сети «${ssid}».`);
+  if (r.ok) {
+    const msg = netMode === 'sta'
+      ? `Устройство перезагрузится. Откройте его по «${mdnsVal ? mdnsVal + '.local' : 'mDNS-имени'}» или новому IP.`
+      : `Подключитесь к сети «${ssid}».`;
+    waitReboot(msg);
+  }
   else toast('Сеть: ' + errText(r), 'err');
 }
 

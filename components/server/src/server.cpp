@@ -14,6 +14,7 @@
 #include "helper_server.h"
 #include "script_engine.h"
 #include "sntp_time.h"
+#include "mdns.h"
 
 
 #ifdef CONFIG_SERVER_HTTPS
@@ -150,6 +151,30 @@ esp_err_t server::start() {
   wifi->register_handlers(m_server);
   controller->register_handlers(m_server);
 
+  esp_err_t mdns_err = mdns_init();
+  if (mdns_err != ESP_OK) {
+    ESP_LOGE(TAG, "mdns_init failed: %s", esp_err_to_name(mdns_err));
+    return mdns_err;
+  }
+
+  std::string hostname = wifi->get_mdns_name();
+  mdns_hostname_set(hostname.c_str());
+  mdns_instance_name_set(hostname.c_str());
+
+  const char *service_proto = "tcp";
+#ifdef CONFIG_SERVER_HTTPS
+  const uint16_t service_port = 443;
+#else
+  const uint16_t service_port = 80;
+#endif
+  mdns_err = mdns_service_add(NULL, "_http", service_proto, service_port, NULL, 0);
+  if (mdns_err != ESP_OK) {
+    ESP_LOGE(TAG, "mdns_service_add failed: %s", esp_err_to_name(mdns_err));
+    mdns_free();
+    return mdns_err;
+  }
+
+  ESP_LOGI(TAG, "mDNS started: %s.local on port %u", hostname.c_str(), service_port);
   ESP_LOGI(TAG, "Server started successfully");
   return ESP_OK;
 }
@@ -163,6 +188,7 @@ void server::stop() {
     #endif
 
     m_server = nullptr;
+    mdns_free();
     ESP_LOGI(TAG, "Server stopped");
   }
 }

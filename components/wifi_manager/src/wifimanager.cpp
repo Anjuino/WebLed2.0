@@ -37,7 +37,8 @@ wifimanager::wifimanager() : settings(STORAGE_WIFI, false) {
     std::string hostname = getHostname();
 
     settings.set(KEY_WIFI_MODE, (uint8_t)WIFI_MODE_AP);
-    settings.set(KEY_NAME_MDNS, hostname);
+    //settings.set(KEY_NAME_MDNS, hostname);
+    settings.set(KEY_NAME_MDNS, "webled");
     settings.set(KEY_SSID, "12345678");
     settings.set(KEY_SSID_PASSWORD, "12345678");
     settings.set(KEY_AP, hostname);
@@ -516,6 +517,8 @@ static esp_err_t api_network_handler_get(httpd_req_t *req) {
       cJSON_AddStringToObject(root, "ap_password", pswd.c_str());
     }
 
+    cJSON_AddStringToObject(root, "mdns", wifi->get_mdns_name().c_str());
+
     wifi_mode_t mode = wifi->get_mode();
     std::string mode_str = "Null";
     if(mode == WIFI_MODE_STA) mode_str = "STA";
@@ -575,6 +578,22 @@ static esp_err_t api_network_handler_post(httpd_req_t *req) {
     if(!root) {
       httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
       return ESP_FAIL;
+    }
+
+    cJSON *mdns = cJSON_GetObjectItem(root, "mdns");
+    if (mdns && cJSON_IsString(mdns)) {
+      std::string name = mdns->valuestring;
+      if (name.size() > 6 && name.substr(name.size() - 6) == ".local") {
+        name = name.substr(0, name.size() - 6);
+      }
+      if (name.empty()) {
+        cJSON_Delete(root);
+        return send_json_status(req, "status", false, "error", "mdns empty");
+      }
+      if (!wifi->set_mdns(name, true)) {
+        cJSON_Delete(root);
+        return send_json_status(req, "status", false, "error", "mdns too long (max 15)");
+      }
     }
 
     cJSON *mode = cJSON_GetObjectItem(root, "mode");
