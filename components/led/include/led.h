@@ -25,6 +25,9 @@
 #define KEY_LED_COLOR_G "color_g"
 #define KEY_LED_COLOR_B "color_b"
 
+#define KEY_LED_MODEL "led_model"          // led_model_t: WS2812 / WS2815
+#define KEY_LED_PIXEL_FORMAT "px_format"   // led_pixel_format_t: GRB / RGB
+
 class led;
 
 struct LedEffect {
@@ -50,6 +53,7 @@ class led {
 
     TaskHandle_t task_handle = nullptr;
     std::atomic<uint16_t> requested_count{0};   // != 0 — задача Led пересоздаст ленту
+    std::atomic<bool> requested_reinit{false};   // сменился тип ленты — задача Led пересоздаст ленту
 
     void reinit_strip(uint16_t new_led_count);
 
@@ -58,9 +62,11 @@ class led {
     protected:
       uint8_t r = 0, g = 0, b = 0;
       uint16_t led_count = 1;
+      led_model_t model = LED_MODEL_WS2812;
+      led_pixel_format_t pixel_format = LED_PIXEL_FORMAT_GRB;
       uint8_t speed = 20;
       uint8_t brightness = 20;
-      uint8_t mode = 1;
+      uint8_t mode = 0;
       bool save_mode = false;
 
       virtual void task();
@@ -103,6 +109,12 @@ class led {
     std::tuple<uint8_t, uint8_t, uint8_t> get_color() { return {r, g, b}; };
 
     bool update_led_count(uint16_t new_count);
+
+    // тип ленты и порядок цветов; сохраняется в NVS, лента пересоздаётся задачей Led.
+    // Поддерживаются WS2812/WS2815 и GRB/RGB — иначе false
+    bool set_strip_type(led_model_t new_model, led_pixel_format_t new_format);
+    led_model_t get_model() { return model; };
+    led_pixel_format_t get_pixel_format() { return pixel_format; };
     void show(void);
 
     void refresh() { if (task_handle) xTaskNotifyGive(task_handle); };

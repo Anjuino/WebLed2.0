@@ -1,0 +1,744 @@
+openapi: 3.0.3
+info:
+  title: WebLed2.0 REST API
+  version: "1.0"
+  description: |
+    HTTP API контроллера светодиодной ленты на ESP32-S3.
+    Подробные пояснения и особенности поведения — `docs/REST_API.md`.
+
+    **Общие правила**
+    - Успешные ответы — JSON (`application/json`).
+    - Ошибки разбора запроса — `400`/`404`/`500` с **plain text** телом.
+    - Логические ошибки часто приходят как `200` + `{"status": false, "error": "..."}` —
+      проверяйте поле `status`, а не только HTTP-код.
+    - Query-переключатели (`?info`, `?state`, …): важно только наличие ключа, но нужен `=`:
+      `?info=` или `?info=1`. Вся query-строка — не длиннее 128 байт.
+    - Тело POST обязательно и меньше 8192 байт.
+    - Аутентификации и CORS нет.
+
+    Открыть в Swagger UI: https://editor.swagger.io → File → Import file.
+    Запросы прямо из редактора не пройдут (нет CORS) — удобно Postman/Insomnia: импорт этого файла.
+
+security: []   # аутентификации нет
+
+servers:
+  - url: http://{host}
+    variables:
+      host:
+        default: webled.local
+        description: IP устройства или mDNS-имя (`webled00001.local`)
+
+tags:
+  - name: led
+    description: Лента — режимы, цвет, яркость, попиксельно
+  - name: device
+    description: Состояние устройства и автоматика (кнопка, датчик света, расписание)
+  - name: network
+    description: Wi-Fi и mDNS
+  - name: file
+    description: Скрипты эффектов
+  - name: ota
+    description: Обновление прошивки
+  - name: web
+    description: Встроенная веб-страница
+
+paths:
+  /:
+    get:
+      operationId: getWebPage
+      tags: [web]
+      summary: Веб-панель
+      description: |
+        HTML-страница, встроенная в прошивку сжатой gzip (`Content-Encoding: gzip`).
+      responses:
+        "200":
+          description: HTML
+          content:
+            text/html:
+              schema: { type: string }
+
+  # ------------------------------------------------------------------ LED
+  /api/led:
+    get:
+      operationId: getLed
+      tags: [led]
+      summary: Настройки, текущее состояние и список эффектов
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LedInfo" }
+    post:
+      operationId: setLed
+      tags: [led]
+      summary: Изменить ленту
+      description: |
+        Все секции опциональны, отсутствующее поле — без изменений.
+
+        Порядок обработки:
+        1. `settings.manual` применяется первым — можно в одном запросе включить ручной режим и поменять ленту.
+        2. `settings.led_count` / `settings.save_mode` применяются всегда.
+        3. Если есть `state` или `leds_arr`, есть автоматика и ручной режим выключен — они не применяются, ответ `409`.
+        4. `leds_arr` переключает ленту в режим 253 «Ручной». Элементы без числового `id` или полного `color` пропускаются.
+
+        Неизвестный `state.mode` не даёт ошибку — поле игнорируется.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LedPostRequest" }
+            examples:
+              static_red:
+                summary: Ручной режим + статичный красный
+                value: { settings: { manual: true }, state: { mode: 254, color: { r: 255, g: 0, b: 0 } } }
+              brightness:
+                summary: Только яркость
+                value: { state: { brightness: 40 } }
+              back_to_automation:
+                summary: Вернуть управление автоматике
+                value: { settings: { manual: false } }
+              pixels:
+                summary: Попиксельно
+                value: { leds_arr: [ { id: 0, color: { r: 255, g: 0, b: 0 } }, { id: 1, color: { r: 0, g: 255, b: 0 } } ] }
+      responses:
+        "200":
+          description: Применено
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatusOk" }
+        "409":
+          description: Лентой управляет автоматика — включите `settings.manual`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatusError" }
+              example: { status: false, error: "работает автоматика. Включите ручное управление" }
+        "400": { $ref: "#/components/responses/BodyError" }
+
+  # ------------------------------------------------------------------ DEVICE
+  /api/device:
+    get:
+      operationId: getDevice
+      tags: [device]
+      summary: Информация, состояние, конфиг автоматики или перезагрузка
+      description: |
+        Передайте **один** из query-параметров. Проверяются по порядку: `config`, `info`, `state`, `restart`.
+      parameters:
+        - { name: config,  in: query, allowEmptyValue: true, schema: { type: string }, description: "Конфиг автоматики из NVS (формат — как в POST)" }
+        - { name: info,    in: query, allowEmptyValue: true, schema: { type: string }, description: "Температура, память, время, версия прошивки" }
+        - { name: state,   in: query, allowEmptyValue: true, schema: { type: string }, description: "Кто держит ленту и состояние автоматик" }
+        - { name: restart, in: query, allowEmptyValue: true, schema: { type: string }, description: "Перезагрузка через ~1 с" }
+      responses:
+        "200":
+          description: Ответ зависит от параметра
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: "#/components/schemas/AutomationConfig"
+                  - $ref: "#/components/schemas/DeviceInfo"
+                  - $ref: "#/components/schemas/DeviceState"
+                  - $ref: "#/components/schemas/StatusOk"
+              examples:
+                info:
+                  summary: "?info="
+                  value:
+                    cpu_temp: 42.5
+                    memory_info: { iram_total: 328243, iram_free: 167671, iram_min_free: 162767, psram_total: 1789140, psram_free: 1707636, psram_min_free: 1695836 }
+                    time: "2026-10-20 18:30"
+                    version: "1.0.0.30"
+                state:
+                  summary: "?state="
+                  value:
+                    current_owner: button
+                    button: { applied: true, holding: true, remaining_sec: 135 }
+                    light_sensor: { value: 1234, is_dark: false, applied: false }
+                    schedule: { applied: false }
+                config:
+                  summary: "?config="
+                  value:
+                    button: { is_active: true, priority: 100, action: { hold: 0, repeat: release, led: { mode: 254, speed: 50, brightness: 100, color: { r: 255, g: 255, b: 255 } } } }
+                restart:
+                  summary: "?restart="
+                  value: { status: true }
+        "404": { $ref: "#/components/responses/QueryMissing" }
+    post:
+      operationId: saveAutomation
+      tags: [device]
+      summary: Сохранить конфиг автоматики (перезагрузка)
+      description: |
+        Каждая секция опциональна и сохраняется целиком, без слияния со старой.
+        Хранится в NVS JSON-blob'ом. После успешной записи устройство **перезагружается** через ~1 с.
+        Если запись в NVS не удалась — ошибка, перезагрузки нет.
+
+        Невалидные поля внутри секций молча игнорируются (остаются значения по умолчанию).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AutomationConfig" }
+            examples:
+              button_toggle:
+                summary: Кнопка как выключатель (держит до повторного нажатия)
+                value: { button: { is_active: true, priority: 100, action: { hold: 0, repeat: release, led: { mode: 254, speed: 50, brightness: 100, color: { r: 255, g: 255, b: 255 } } } } }
+              light_sensor:
+                summary: Датчик света вечером
+                value: { light_sensor: { is_active: true, priority: 20, action: { dark: 300, light: 800, time: { start: { hour: 18, minute: 0 }, end: { hour: 8, minute: 0 } }, led: { mode: 254, speed: 50, brightness: 80, color: { r: 255, g: 180, b: 80 } } } } }
+              schedule:
+                summary: Расписание по будням
+                value:
+                  schedule:
+                    is_active: true
+                    priority: 15
+                    days:
+                      - day: 1
+                        intervals:
+                          - { start: { hour: 9, minute: 0 }, stop: { hour: 23, minute: 0 }, led: { mode: 3, speed: 50, brightness: 80, color: { r: 255, g: 120, b: 40 } } }
+                          - { start: { hour: 23, minute: 0 }, stop: { hour: 6, minute: 0 }, led: { mode: 255 } }
+      responses:
+        "200":
+          description: "`status: true` — сохранено, перезагрузка; `status: false` — запись в NVS не удалась"
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/StatusOk"
+                  - $ref: "#/components/schemas/StatusError"
+              examples:
+                ok: { value: { status: true } }
+                nvs_failed: { value: { status: false, error: "nvs write failed: schedule" } }
+        "400": { $ref: "#/components/responses/BodyError" }
+
+  # ------------------------------------------------------------------ NETWORK
+  /api/network:
+    get:
+      operationId: getNetwork
+      tags: [network]
+      summary: Текущая сеть или сканирование эфира
+      description: Передайте `info` или `scanwifi`. Сканирование блокирует обработчик на ~1–3 с.
+      parameters:
+        - { name: info,     in: query, allowEmptyValue: true, schema: { type: string }, description: "Режим, SSID/пароли, mDNS, IP" }
+        - { name: scanwifi, in: query, allowEmptyValue: true, schema: { type: string }, description: "Сканирование сетей" }
+      responses:
+        "200":
+          description: Ответ зависит от параметра
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: "#/components/schemas/NetworkInfo"
+                  - $ref: "#/components/schemas/WifiScan"
+              examples:
+                info:
+                  summary: "?info="
+                  value: { sta_ssid: TP-Link_467D, sta_password: "66484608", ap_ssid: webled00001, ap_password: "12345678", mdns: webled00001, ip: 192.168.0.36, mode: STA }
+                scanwifi:
+                  summary: "?scanwifi="
+                  value: { wifi_networks: [ { ssid: TP-Link_467D, rssi: -54, bssid: "a4:2b:b0:11:22:33" } ] }
+        "404": { $ref: "#/components/responses/QueryMissing" }
+    post:
+      operationId: setNetwork
+      tags: [network]
+      summary: Сменить подключение (перезагрузка) и/или mDNS-имя (сразу)
+      description: |
+        - `mode` + `sta`/`ap` — сохраняет настройки и **перезагружает** устройство через ~1 с.
+        - только `mdns` — имя применяется сразу, без перезагрузки. Суффикс `.local` срезается.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NetworkPostRequest" }
+            examples:
+              sta:
+                summary: Подключиться к роутеру
+                value: { mode: sta, sta: { sta_ssid: MyWiFi, sta_password: qwerty123 } }
+              ap:
+                summary: Поднять свою точку доступа
+                value: { mode: ap, ap: { ap_ssid: webled, ap_password: "12345678" } }
+              mdns:
+                summary: Только сменить mDNS-имя
+                value: { mdns: kitchen }
+      responses:
+        "200":
+          description: Результат. При успешной смене режима — перезагрузка
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/NetworkPostOk"
+                  - $ref: "#/components/schemas/StatusError"
+              examples:
+                sta: { value: { status: true, success: "sta mode set" } }
+                mdns: { value: { status: true, success: "mdns set" } }
+                bad_mdns: { value: { status: false, error: "mdns: 1..15 chars, a-z 0-9 - _" } }
+                bad_mode: { value: { status: false, error: "invalid mode" } }
+                failed:
+                  summary: Нет полей / не строки / set_sta/set_ap не удался (причина — в логе)
+                  value: { status: false, error: "fail parse json" }
+        "400": { $ref: "#/components/responses/BodyError" }
+
+  # ------------------------------------------------------------------ FILE
+  /api/file:
+    get:
+      operationId: getFile
+      tags: [file]
+      summary: Список скриптов или содержимое одного
+      parameters:
+        - { name: info, in: query, allowEmptyValue: true, schema: { type: string }, description: "Список файлов и занятость ФС" }
+        - { name: name, in: query, schema: { type: string }, description: "Имя файла — вернуть содержимое", example: fire }
+      responses:
+        "200":
+          description: Ответ зависит от параметра
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: "#/components/schemas/FileList"
+                  - $ref: "#/components/schemas/ScriptFile"
+              examples:
+                info:
+                  summary: "?info="
+                  value: { files: [ { name: fire, size: 512 } ], info: { file_total: 1, size_total: 786432, size_used: 8192 } }
+                name:
+                  summary: "?name=fire"
+                  value: { name: fire, text: "function step() { led::show(); led::delay(50); }", id: 10, continuous: true }
+        "404":
+          description: "`File not found` или `Query param is missing`"
+          content:
+            text/plain:
+              schema: { type: string }
+        "500":
+          description: "`Invalid JSON in file`"
+          content:
+            text/plain:
+              schema: { type: string }
+    post:
+      operationId: saveScript
+      tags: [file]
+      summary: Скомпилировать и сохранить скрипт эффекта
+      description: |
+        Компиляция синхронная. Файл сохраняется **только при успехе**.
+
+        Проверки: синтаксис; верхний уровень скрипта должен завершиться (бесконечный цикл вне
+        `step()` ловится по лимиту инструкций); функция `step()` обязательна.
+        Каждая ошибка также пишется в лог устройства.
+
+        Пересохранение скрипта с тем же `name` и `id`: новая версия проверяется и сохраняется,
+        но заменит эффект только после перезагрузки (`registered: false`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ScriptFile" }
+            example:
+              name: dot
+              id: 10
+              continuous: true
+              text: |
+                var pos = 0;
+                function step()
+                {
+                    var n = led::count();
+                    for (var i = 0; i < n; i++)
+                    {
+                        if (i == ::pos) led::setPixel(i, led::getR(), led::getG(), led::getB());
+                        else led::setPixel(i, 0, 0, 0);
+                    }
+                    led::show();
+                    ::pos = (::pos + 1) % n;
+                    led::delay(110 - led::speed());
+                }
+      responses:
+        "200":
+          description: Результат компиляции
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ScriptSaveOk"
+                  - $ref: "#/components/schemas/StatusError"
+              examples:
+                registered: { value: { status: true, registered: true } }
+                after_reboot: { value: { status: true, registered: false, warning: "saved, the effect will update after reboot" } }
+                compile_error: { value: { status: false, error: "compile: unexpected token" } }
+                infinite_loop: { value: { status: false, error: "top-level code did not finish (infinite loop?) - put the loop logic into step()" } }
+                no_step: { value: { status: false, error: "script does not define step()" } }
+                id_used: { value: { status: false, error: "id 10 already in use" } }
+                bad_field: { value: { status: false, error: "id: number 0..255 required" } }
+        "400": { $ref: "#/components/responses/BodyError" }
+    delete:
+      operationId: deleteScript
+      tags: [file]
+      summary: Удалить файл скрипта
+      description: Удаляет только файл — эффект остаётся в списке режимов до перезагрузки.
+      parameters:
+        - { name: name, in: query, required: true, schema: { type: string }, example: fire }
+      responses:
+        "200":
+          description: Результат
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/StatusOk"
+                  - $ref: "#/components/schemas/StatusError"
+              examples:
+                ok: { value: { status: true } }
+                not_found: { value: { status: false, error: "file not found" } }
+        "404": { $ref: "#/components/responses/QueryMissing" }
+
+  # ------------------------------------------------------------------ OTA
+  /api/ota/local-upload:
+    post:
+      operationId: otaLocalUpload
+      tags: [ota]
+      summary: Залить прошивку (тело — сырой .bin)
+      description: |
+        `Content-Length` обязателен. После успеха перезагрузка через ~2 с.
+        Новая прошивка помечается рабочей сразу после старта Wi-Fi и сервера; если она не поднялась —
+        загрузчик откатит на предыдущую.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: Прошивка записана
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  message: { type: string, example: "OTA update successful" }
+        "400":
+          description: "`Content-Length header required`"
+          content: { text/plain: { schema: { type: string } } }
+        "500":
+          description: "`OTA failed` / `OTA context null`"
+          content: { text/plain: { schema: { type: string } } }
+
+  /api/ota/remote-upload:
+    post:
+      operationId: otaRemoteUpload
+      tags: [ota]
+      summary: Скачать прошивку с удалённого сервера (в фоне)
+      description: |
+        Ответ сразу. Дальше устройство: GET `OTA_REMOTE_URL?current=<версия>&chipid=<MAC>` →
+        запись в OTA-раздел → POST `OTA_ACK_URL` (`installed`/`failed`) → при успехе перезагрузка через 3 с.
+        URL — в `components/server/src/ota.cpp`. Тело запроса игнорируется.
+      responses:
+        "200":
+          description: Всегда 200, результат запуска в теле
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  started: { type: boolean }
+                  message: { type: string }
+                  error: { type: string }
+              examples:
+                started: { value: { started: true, message: "OTA fetch started in background" } }
+                busy: { value: { started: false, error: "OTA already in progress" } }
+                failed: { value: { started: false, error: "Failed to start OTA task" } }
+
+components:
+  responses:
+    BodyError:
+      description: |
+        Ошибка тела запроса (plain text): `Empty body`, `Body too large` (≥ 8192 байт),
+        `Recv failed`, `Invalid JSON`; `500 OOM`.
+      content:
+        text/plain:
+          schema: { type: string }
+          example: Invalid JSON
+    QueryMissing:
+      description: Не передан ни один ожидаемый query-параметр
+      content:
+        text/plain:
+          schema: { type: string }
+          example: Query param is missing
+
+  schemas:
+    # ---------- общее
+    StatusOk:
+      type: object
+      required: [status]
+      properties:
+        status: { type: boolean, enum: [true] }
+    StatusError:
+      type: object
+      required: [status]
+      properties:
+        status: { type: boolean, enum: [false] }
+        error: { type: string }
+    Color:
+      type: object
+      properties:
+        r: { type: integer, minimum: 0, maximum: 255 }
+        g: { type: integer, minimum: 0, maximum: 255 }
+        b: { type: integer, minimum: 0, maximum: 255 }
+      example: { r: 255, g: 180, b: 80 }
+    TimeHM:
+      type: object
+      properties:
+        hour: { type: integer, minimum: 0, maximum: 23 }
+        minute: { type: integer, minimum: 0, maximum: 59 }
+      example: { hour: 18, minute: 0 }
+
+    # ---------- лента
+    LedState:
+      type: object
+      description: Состояние ленты. `speed` и `brightness` — 0..100, значения больше 100 игнорируются.
+      properties:
+        mode: { type: integer, minimum: 1, maximum: 255, description: "id эффекта из `modes`" }
+        speed: { type: integer, minimum: 0, maximum: 100 }
+        brightness: { type: integer, minimum: 0, maximum: 100 }
+        color: { $ref: "#/components/schemas/Color" }
+    LedSettings:
+      type: object
+      properties:
+        led_count: { type: integer, minimum: 1, description: "Количество светодиодов (NVS)" }
+        save_mode: { type: boolean, description: "Сохранять состояние в NVS" }
+        manual: { type: boolean, description: "Ручное управление — автоматика на паузе" }
+        led_model: { type: string, enum: [ws2812, ws2815], description: "Тип ленты (NVS). Смена пересоздаёт ленту без перезагрузки" }
+        pixel_format: { type: string, enum: [grb, rgb], description: "Порядок цветов (NVS). Можно передать только одно из двух полей" }
+    Mode:
+      type: object
+      properties:
+        id_mode: { type: integer }
+        name: { type: string }
+    LedInfo:
+      type: object
+      properties:
+        settings: { $ref: "#/components/schemas/LedSettings" }
+        state: { $ref: "#/components/schemas/LedState" }
+        modes:
+          type: array
+          description: |
+            Отсортирован по `id_mode`. Встроенные: 1 Радуга, 2 Бегущий огонь, 3 Огонь, 4 Дыхание,
+            5 Мерцание, 6 Погоня, 7 Волна, 8 Заполнение, 9 Сканер, 253 Ручной, 254 Статичный цвет, 255 Выкл.
+            Скрипты — с id от 10.
+          items: { $ref: "#/components/schemas/Mode" }
+      example:
+        settings: { led_count: 60, save_mode: true, manual: false, led_model: ws2812, pixel_format: grb }
+        state: { mode: 254, speed: 50, brightness: 80, color: { r: 255, g: 64, b: 0 } }
+        modes: [ { id_mode: 1, name: "Радуга" }, { id_mode: 254, name: "Статичный цвет" }, { id_mode: 255, name: "Выкл" } ]
+    LedPixel:
+      type: object
+      properties:
+        id: { type: integer, minimum: 0, description: "Номер светодиода; >= led_count игнорируется" }
+        color: { $ref: "#/components/schemas/Color" }
+    LedPostRequest:
+      type: object
+      properties:
+        settings: { $ref: "#/components/schemas/LedSettings" }
+        state: { $ref: "#/components/schemas/LedState" }
+        leds_arr:
+          type: array
+          description: Попиксельная заливка; переключает в режим 253. ~45 байт на пиксель — помните про лимит 8 КБ
+          items: { $ref: "#/components/schemas/LedPixel" }
+
+    # ---------- устройство
+    DeviceInfo:
+      type: object
+      properties:
+        cpu_temp: { type: number, description: "°C" }
+        memory_info:
+          type: object
+          properties:
+            iram_total: { type: integer }
+            iram_free: { type: integer }
+            iram_min_free: { type: integer }
+            psram_total: { type: integer }
+            psram_free: { type: integer }
+            psram_min_free: { type: integer }
+        time: { type: string, description: "YYYY-MM-DD HH:MM; до синхронизации SNTP — 1970 год", example: "2026-10-20 18:30" }
+        version: { type: string, example: "1.0.0.30" }
+    DeviceState:
+      type: object
+      description: Секции автоматик есть, если для них есть конфиг (в том числе при `is_active false`).
+      properties:
+        current_owner: { type: string, description: "Кто держит ленту: button | light_sensor | schedule | \"\" (никто или ручной режим)" }
+        button:
+          type: object
+          properties:
+            applied: { type: boolean }
+            holding: { type: boolean, description: "Кнопка держит ленту" }
+            remaining_sec: { type: integer, description: "Сколько ещё держать; -1 — до повторного нажатия. Нет поля — не держит" }
+        light_sensor:
+          type: object
+          properties:
+            value: { type: integer, description: "Последнее значение АЦП 0..4095" }
+            is_dark: { type: boolean }
+            applied: { type: boolean }
+        schedule:
+          type: object
+          properties:
+            applied: { type: boolean }
+
+    # ---------- автоматика
+    TimeWindow:
+      type: object
+      description: Окно активности; end < start — через полночь. Нет поля — работает круглосуточно
+      properties:
+        start: { $ref: "#/components/schemas/TimeHM" }
+        end: { $ref: "#/components/schemas/TimeHM" }
+    AutomationLed:
+      type: object
+      description: Что включить на ленте. Для кнопки/датчика mode, speed, brightness должны быть > 0
+      properties:
+        mode: { type: integer, minimum: 1, maximum: 255 }
+        speed: { type: integer, minimum: 0, maximum: 100 }
+        brightness: { type: integer, minimum: 0, maximum: 100 }
+        color: { $ref: "#/components/schemas/Color" }
+    ButtonConfig:
+      type: object
+      properties:
+        is_active: { type: boolean, default: true }
+        priority: { type: integer, minimum: 0, maximum: 255, description: "Выше — главнее" }
+        action:
+          type: object
+          properties:
+            hold: { type: integer, minimum: 0, description: "Сек держать ленту; 0 — до повторного нажатия (только с repeat release)" }
+            repeat:
+              type: string
+              enum: [extend, release]
+              default: extend
+              description: |
+                Нажатие, пока кнопка держит ленту: `extend` — отсчёт hold заново;
+                `release` — отпустить ленту (вернуть то, что было до кнопки).
+                Повтор быстрее 0,5 с игнорируется. `release` срабатывает и вне окна `time`.
+            time: { $ref: "#/components/schemas/TimeWindow" }
+            led: { $ref: "#/components/schemas/AutomationLed" }
+    LightSensorConfig:
+      type: object
+      properties:
+        is_active: { type: boolean, default: true }
+        priority: { type: integer, minimum: 0, maximum: 255 }
+        action:
+          type: object
+          properties:
+            dark: { type: integer, minimum: 0, maximum: 4095, description: "Порог АЦП «стало темно»" }
+            light: { type: integer, minimum: 0, maximum: 4095, description: "Порог АЦП «стало светло»; между порогами — гистерезис" }
+            time: { $ref: "#/components/schemas/TimeWindow" }
+            led: { $ref: "#/components/schemas/AutomationLed" }
+    ScheduleInterval:
+      type: object
+      description: start == stop — интервал выбрасывается. stop < start — через полночь (хвост — на следующий день)
+      properties:
+        start: { $ref: "#/components/schemas/TimeHM" }
+        stop: { $ref: "#/components/schemas/TimeHM" }
+        led:
+          allOf: [ { $ref: "#/components/schemas/AutomationLed" } ]
+          description: "Чтобы погасить ленту — mode 255 (mode 0 и отсутствие led тоже дают 255)"
+    ScheduleDay:
+      type: object
+      properties:
+        day: { type: integer, minimum: 0, maximum: 6, description: "0 = вс, 1 = пн, …, 6 = сб" }
+        intervals:
+          type: array
+          maxItems: 5
+          items: { $ref: "#/components/schemas/ScheduleInterval" }
+    ScheduleConfig:
+      type: object
+      description: Опрос раз в 15 с; без синхронизации времени по SNTP не работает
+      properties:
+        is_active: { type: boolean, default: true }
+        priority: { type: integer, minimum: 0, maximum: 255, default: 15 }
+        days:
+          type: array
+          maxItems: 7
+          items: { $ref: "#/components/schemas/ScheduleDay" }
+    AutomationConfig:
+      type: object
+      description: Каждая секция опциональна. Нет секции в GET ?config — автоматика не настроена
+      properties:
+        button: { $ref: "#/components/schemas/ButtonConfig" }
+        light_sensor: { $ref: "#/components/schemas/LightSensorConfig" }
+        schedule: { $ref: "#/components/schemas/ScheduleConfig" }
+
+    # ---------- сеть
+    NetworkInfo:
+      type: object
+      description: Поля sta_* / ap_* есть, только если режим сконфигурирован
+      properties:
+        sta_ssid: { type: string }
+        sta_password: { type: string }
+        ap_ssid: { type: string, description: "По умолчанию webled + цифры серийника (или + MAC без серийника)" }
+        ap_password: { type: string }
+        mdns: { type: string, description: "Без .local" }
+        ip: { type: string, description: "IP в сети роутера, иначе своей точки доступа, иначе пусто" }
+        mode: { type: string, enum: [STA, AP, AP+STA, "Null"] }
+    WifiScan:
+      type: object
+      properties:
+        wifi_networks:
+          type: array
+          items:
+            type: object
+            properties:
+              ssid: { type: string }
+              rssi: { type: integer, description: "dBm" }
+              bssid: { type: string, example: "a4:2b:b0:11:22:33" }
+    NetworkPostRequest:
+      type: object
+      properties:
+        mode: { type: string, enum: [sta, ap] }
+        sta:
+          type: object
+          properties:
+            sta_ssid: { type: string }
+            sta_password: { type: string }
+        ap:
+          type: object
+          properties:
+            ap_ssid: { type: string }
+            ap_password: { type: string }
+        mdns:
+          type: string
+          minLength: 1
+          maxLength: 15
+          pattern: "^[A-Za-z0-9_-]+$"
+          description: "1–15 символов a-z 0-9 - _; суффикс .local срезается"
+    NetworkPostOk:
+      type: object
+      required: [status]
+      properties:
+        status: { type: boolean, enum: [true] }
+        success: { type: string, enum: ["sta mode set", "ap mode set", "mdns set"] }
+
+    # ---------- скрипты
+    ScriptFile:
+      type: object
+      required: [name, text, id, continuous]
+      properties:
+        name: { type: string, minLength: 1, description: "Имя файла, без /" }
+        text: { type: string, minLength: 1, description: "Исходник wrench; обязательна функция step()" }
+        id: { type: integer, minimum: 0, maximum: 255, description: "id эффекта; 1..9 и 253..255 заняты встроенными" }
+        continuous: { type: boolean, description: "Анимированный (step() вызывается постоянно)" }
+    ScriptSaveOk:
+      type: object
+      required: [status]
+      properties:
+        status: { type: boolean, enum: [true] }
+        registered: { type: boolean, description: "false — пересохранение: применится после перезагрузки" }
+        warning: { type: string }
+    FileList:
+      type: object
+      properties:
+        files:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              size: { type: integer }
+        info:
+          type: object
+          properties:
+            file_total: { type: integer }
+            size_total: { type: integer }
+            size_used: { type: integer }

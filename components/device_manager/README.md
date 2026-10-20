@@ -41,7 +41,7 @@ char serial[32];
 char project[64];
 if (device_meta_read_serial(serial, sizeof(serial)) &&
     device_meta_read_project(project, sizeof(project))) {
-    ESP_LOGI("boot", "device: %s, sn-%s", project, serial);
+    ESP_LOGI("boot", "device: %s, %s", project, serial);   // "device: Led, SN-00001"
 } else {
     ESP_LOGW("boot", "not provisioned");
 }
@@ -107,7 +107,7 @@ python components/device_manager/bump_version.py
 ### provision.py — запись project+serial (один раз при производстве)
 
 ```bash
-python components/device_manager/provision.py "Led, sn-00001" --port COM3
+python components/device_manager/provision.py "Led, SN-00001" --port COM3
 ```
 
 Формат: `"<project>, <serial>"` через запятую. Пробелы по краям срезаются.
@@ -120,12 +120,18 @@ python components/device_manager/provision.py "Led, sn-00001" --port COM3
 
 Нужен `IDF_PATH` в окружении (через `export.bat`).
 
+Серийник задаёт имена устройства: точка доступа `webled00001`, mDNS `webled00001.local`
+(цифры из серийника: `SN-00001` → `00001`). Прошивать его можно после прошивки и первого запуска — на следующей
+перезагрузке автоматические имена (по MAC / `webled`) один раз заменятся на имена с серийником.
+Подробно — раздел «Имена устройства» в [docs/REST_API.md](../../docs/REST_API.md#имена-устройства).
+
 ## Проверка
 
 После `provision.py`:
 1. Открыть serial-монитор
 2. Перезагрузить устройство
-3. В логе: `device: Led, sn-00001`
+3. В логе: `device: Led, SN-00001`
+4. В логе `wifimanager`: имя точки доступа `webled00001`, mDNS `webled00001`
 
 Если `not provisioned` — meta пустая, прогони `provision.py` ещё раз.
 Если `meta partition not found in table` — раздел не объявлен в `partitions.csv`.

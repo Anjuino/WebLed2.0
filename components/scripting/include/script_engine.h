@@ -19,9 +19,14 @@ void script_engine_start(class led *wLed, class FileSystem *_fs);
 // поэтому синхронное ожидание не проблема).
 //
 // error/error_len — опциональный буфер под текст ошибки компиляции, если
-// вызов вернул false.
+// вызов вернул false (ошибка также пишется в лог).
+//
+// registered — true, если эффект зарегистрирован сейчас. Если id уже занят скриптом с тем же
+// именем (пересохранение), новая версия только проверяется: вызов вернёт true, registered = false,
+// и эффект обновится после перезагрузки.
 bool script_engine_compile_and_register(const char *name, uint8_t id, bool continuous,
                                          const char *source, int source_len = -1,
-                                         char *error = nullptr, size_t error_len = 0);
+                                         char *error = nullptr, size_t error_len = 0,
+                                         bool *registered = nullptr);
 
 #endif

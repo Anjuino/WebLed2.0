@@ -28,7 +28,8 @@ class i_schedule : public Automation {
     uint8_t days_count = 0;
 
     TimerHandle_t tick_timer = nullptr;
-    bool applied = false;
+    bool applied = false;                  // своё состояние сейчас на ленте (мы владелец)
+    bool wanting = false;                  // на прошлом тике был активный интервал
     led_state *last_applied = nullptr;
 
     static void on_tick_cb(TimerHandle_t t) { static_cast<i_schedule*>(pvTimerGetTimerID(t))->evaluate(); }

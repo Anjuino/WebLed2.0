@@ -3,8 +3,8 @@
 Записывает метаданные устройства (имя проекта + серийник) в раздел 'meta'.
 
 Использование:
-  python components/device_manager/provision.py "Project, sn-00001" --port COM3
-  python components/device_manager/provision.py "Led, sn-00042" --port COM3
+  python components/device_manager/provision.py "Project, SN-00001" --port COM3
+  python components/device_manager/provision.py "Led, SN-00042" --port COM3
 
 Формат аргумента: "<project>, <serial>" — через запятую с пробелом.
 Пробелы по краям автоматически срезаются.

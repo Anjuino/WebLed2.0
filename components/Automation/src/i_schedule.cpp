@@ -47,7 +47,7 @@ bool i_schedule::parse_led(cJSON *obj, led_state &out) {
   bool ok = false;
   cJSON *mode = cJSON_GetObjectItem(obj, "mode");
   if (cJSON_IsNumber(mode) && mode->valueint >= 0 && mode->valueint <= 255) {
-    out.mode = (uint8_t)mode->valueint;
+    out.mode = mode->valueint == 0 ? 255 : (uint8_t)mode->valueint;   // 0 исторически значил «выключить»
     ok = true;
   }
   cJSON *speed = cJSON_GetObjectItem(obj, "speed");
@@ -115,7 +115,8 @@ void i_schedule::from_json(cJSON *json) {
         interval_t &iv = d.intervals[d.intervals_count];
         iv.start = start_min;
         iv.stop = stop_min;
-        parse_led(cJSON_GetObjectItem(j_iv, "led"), iv.state);
+        // без led (или с битым mode) интервал гасит ленту — эффекта с id 0 нет, лента бы просто застыла
+        if (!parse_led(cJSON_GetObjectItem(j_iv, "led"), iv.state)) iv.state.mode = 255;
         iv.valid = true;
         d.intervals_count++;
       }
@@ -161,12 +162,12 @@ led_state *i_schedule::find_current_interval(int today_wday, uint16_t now_min) {
 
 void i_schedule::evaluate() {
   if (!is_active) {
-    if (applied) {
+    if (wanting) {
       ESP_LOGI(TAG, "evaluate: источник отключён, отпускаю ленту");
       dev->release(this);
-      applied = false;
-      last_applied = nullptr;
     }
+    wanting = applied = false;
+    last_applied = nullptr;
     return;
   }
 
@@ -184,30 +185,28 @@ void i_schedule::evaluate() {
   led_state *cur = find_current_interval(today_wday, now_min);
 
   if (cur) {
-    if (!applied) {
-      if (dev->engage(this)) {
+    // engage на каждом тике: лентой могли завладеть кнопка/датчик или включить ручной режим.
+    // Пишем на ленту только пока владеем ею
+    if (dev->engage(this)) {
+      if (!applied || cur != last_applied) {
         class led *wled = dev->get_led();
         if (wled) wled->set_state(cur->r, cur->g, cur->b, cur->mode, cur->speed, cur->brightness);
+        ESP_LOGI(TAG, "evaluate: %s", applied ? "переключились на другой интервал" : "захватил ленту, интервал активен");
         applied = true;
         last_applied = cur;
-        ESP_LOGI(TAG, "evaluate: захватил ленту, интервал активен");
-      } else {
-        ESP_LOGI(TAG, "evaluate: лента занята более приоритетным источником");
       }
-    } else if (cur != last_applied) {
-      class led *wled = dev->get_led();
-      if (wled) wled->set_state(cur->r, cur->g, cur->b, cur->mode, cur->speed, cur->brightness);
-      last_applied = cur;
-      ESP_LOGI(TAG, "evaluate: переключились на другой интервал");
-    }
-  } else {
-    if (applied) {
-      ESP_LOGI(TAG, "evaluate: интервал закончился, отпускаю ленту");
-      dev->release(this);
+    } else {
+      if (applied) ESP_LOGI(TAG, "evaluate: лентой владеет другой источник или ручной режим");
       applied = false;
-      last_applied = nullptr;
     }
+  } else if (wanting) {
+    ESP_LOGI(TAG, "evaluate: интервал закончился, отпускаю ленту");
+    dev->release(this);
+    applied = false;
+    last_applied = nullptr;
   }
+
+  wanting = cur != nullptr;
 }
 
 void i_schedule::start() {

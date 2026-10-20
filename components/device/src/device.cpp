@@ -4,10 +4,45 @@
 #include "i_light_sensor.h"
 #include "i_schedule.h"
 #include <algorithm>
+#include <cstring>
 #include <math.h>
 #include "esp_log.h"
 
 static const char *TAG = "device";
+
+// конфиги автоматики храним blob'ом: строка в NVS ограничена 4000 байт,
+// а полное расписание (7 дней × 5 интервалов) выходит за 5 КБ
+std::string device::load_config(const char *key) {
+  std::string raw = settings.get_blob_as_string(key, "");
+  if (raw.empty()) raw = settings.get(key, "");   // старые прошивки писали строкой
+  return raw;
+}
+
+bool device::save_config(const char *key, cJSON *json) {
+  char *str = cJSON_PrintUnformatted(json);
+  if (!str) return false;
+  // ключ мог остаться строкой от старой прошивки — сносим его, чтобы не было двух типов под одним именем
+  bool ok = settings.erase(key) && settings.set_blob(key, str, strlen(str));
+  if (!ok) ESP_LOGE(TAG, "не удалось сохранить %s (%u байт)", key, (unsigned)strlen(str));
+  free(str);
+  return ok;
+}
+
+template <typename T>
+void device::add_automation(const char *key) {
+  std::string raw = load_config(key);
+  if (raw.empty()) return;
+  cJSON *cfg = cJSON_Parse(raw.c_str());
+  if (!cfg) {
+    ESP_LOGE(TAG, "%s: невалидный JSON в NVS", key);
+    return;
+  }
+  auto item = std::make_unique<T>(this);
+  item->from_json(cfg);
+  cJSON_Delete(cfg);
+  item->start();
+  automations.push_back(std::move(item));
+}
 
 device::device() : settings(STORAGE_DEVICE, false) 
 {
@@ -20,41 +55,9 @@ device::device() : settings(STORAGE_DEVICE, false)
   fs = new FileSystem();
   script_engine_start(wled, fs);
 
-  std::string raw1 = settings.get(KEY_BUTTON_CONFIG, "");
-  if (!raw1.empty()) {
-    cJSON *cfg = cJSON_Parse(raw1.c_str());
-    if (cfg) {
-      auto btn = std::make_unique<i_button>(this);
-      btn->from_json(cfg);
-      cJSON_Delete(cfg);
-      btn->start();
-      automations.push_back(std::move(btn));
-    }
-  }
-
-  std::string raw2 = settings.get(KEY_LIGHT_SENSOR_CONFIG, "");
-  if (!raw2.empty()) {
-    cJSON *cfg = cJSON_Parse(raw2.c_str());
-    if (cfg) {
-      auto sensor = std::make_unique<i_light_sensor>(this);
-      sensor->from_json(cfg);
-      cJSON_Delete(cfg);
-      sensor->start();
-      automations.push_back(std::move(sensor));
-    }
-  }
-
-  std::string raw3 = settings.get(KEY_SCHEDULE_CONFIG, "");
-  if (!raw3.empty()) {
-    cJSON *cfg = cJSON_Parse(raw3.c_str());
-    if (cfg) {
-      auto schedule = std::make_unique<i_schedule>(this);
-      schedule->from_json(cfg);
-      cJSON_Delete(cfg);
-      schedule->start();
-      automations.push_back(std::move(schedule));
-    }
-  }
+  add_automation<i_button>(KEY_BUTTON_CONFIG);
+  add_automation<i_light_sensor>(KEY_LIGHT_SENSOR_CONFIG);
+  add_automation<i_schedule>(KEY_SCHEDULE_CONFIG);
 }
 
 device::~device()
@@ -74,44 +77,35 @@ static esp_err_t api_device_handler_post(httpd_req_t *req) {
       return ESP_FAIL;
     }
 
-    bool need_commit = false;
-    cJSON *json_button = cJSON_GetObjectItem(root, "button");
-    if(cJSON_IsObject(json_button)) {
-      char *str = cJSON_PrintUnformatted(json_button);
-      if(str) {
-        if(contorller->settings.set(KEY_BUTTON_CONFIG, str)) {
-          need_commit = true;
-        }
-        free(str);
+    static const struct { const char *json_key; const char *nvs_key; } sections[] = {
+      { "button",       KEY_BUTTON_CONFIG },
+      { "light_sensor", KEY_LIGHT_SENSOR_CONFIG },
+      { "schedule",     KEY_SCHEDULE_CONFIG },
+    };
+
+    const char *failed = nullptr;
+    bool saved = false;
+    for (const auto &s : sections) {
+      cJSON *item = cJSON_GetObjectItem(root, s.json_key);
+      if (!cJSON_IsObject(item)) continue;
+      if (!contorller->save_config(s.nvs_key, item)) {
+        failed = s.json_key;
+        break;
       }
+      saved = true;
+    }
+    cJSON_Delete(root);
+
+    if (saved) contorller->settings.commit();
+
+    // не перезагружаемся при ошибке: иначе клиент думает, что всё сохранилось
+    if (failed) {
+      char msg[64];
+      snprintf(msg, sizeof(msg), "nvs write failed: %s", failed);
+      return send_json_status(req, "status", false, "error", msg);
     }
 
-    cJSON *json_light_sensor = cJSON_GetObjectItem(root, "light_sensor");
-    if(cJSON_IsObject(json_light_sensor)) {
-      char *str = cJSON_PrintUnformatted(json_light_sensor);
-      if(str) {
-        if(contorller->settings.set(KEY_LIGHT_SENSOR_CONFIG, str)) {
-          need_commit = true;
-        }
-        free(str);
-      }
-    }
-
-    cJSON *json_schedule = cJSON_GetObjectItem(root, "schedule");
-    if(cJSON_IsObject(json_schedule)) {
-      char *str = cJSON_PrintUnformatted(json_schedule);
-      if(str) {
-        if(contorller->settings.set(KEY_SCHEDULE_CONFIG, str)) {
-          need_commit = true;
-        }
-        free(str);
-      }
-    }
-
-    if(need_commit) {
-      contorller->settings.commit();
-      ESP_LOGI(TAG, "Сохранил изменения");
-    }
+    ESP_LOGI(TAG, "Сохранил изменения");
     send_json_status(req, "status", true, nullptr, nullptr);
 
     vTaskDelay(pdMS_TO_TICKS(1000));
@@ -127,16 +121,13 @@ static esp_err_t api_device_handler_get(httpd_req_t *req) {
 
   char value[256];
   if (get_query_param(req, "config", value, sizeof(value))) {
-    std::string raw_button = contorller->settings.get(KEY_BUTTON_CONFIG, "");
-    cJSON *button = cJSON_Parse(raw_button.c_str());
+    cJSON *button = cJSON_Parse(contorller->load_config(KEY_BUTTON_CONFIG).c_str());
     if (button) cJSON_AddItemToObject(root, "button", button);
 
-    std::string raw_light = contorller->settings.get(KEY_LIGHT_SENSOR_CONFIG, "");
-    cJSON *light_sensor = cJSON_Parse(raw_light.c_str());
+    cJSON *light_sensor = cJSON_Parse(contorller->load_config(KEY_LIGHT_SENSOR_CONFIG).c_str());
     if (light_sensor) cJSON_AddItemToObject(root, "light_sensor", light_sensor);
 
-    std::string raw_schedule = contorller->settings.get(KEY_SCHEDULE_CONFIG, "");
-    cJSON *schedule = cJSON_Parse(raw_schedule.c_str());
+    cJSON *schedule = cJSON_Parse(contorller->load_config(KEY_SCHEDULE_CONFIG).c_str());
     if (schedule) cJSON_AddItemToObject(root, "schedule", schedule);
 
     return send_resp_json(root, req);
@@ -200,6 +191,8 @@ static esp_err_t api_led_info_handler(httpd_req_t *req) {
       cJSON_AddNumberToObject(settings, "led_count", wLed->get_count_led());
       cJSON_AddBoolToObject(settings, "save_mode", wLed->get_save_mode());
       cJSON_AddBoolToObject(settings, "manual", controller->is_manual());
+      cJSON_AddStringToObject(settings, "led_model", wLed->get_model() == LED_MODEL_WS2815 ? "ws2815" : "ws2812");
+      cJSON_AddStringToObject(settings, "pixel_format", wLed->get_pixel_format() == LED_PIXEL_FORMAT_RGB ? "rgb" : "grb");
       cJSON_AddItemToObject(root, "settings", settings);
     } else {
       cJSON_Delete(root);
@@ -284,6 +277,28 @@ static esp_err_t api_led_control_handler(httpd_req_t *req) {
 
       cJSON *save_mode = cJSON_GetObjectItem(settings, "save_mode");
       if(cJSON_IsBool(save_mode)) wLed->set_save_mode(save_mode->valueint);
+
+      // тип ленты и порядок цветов: можно передать одно из двух, второе останется как есть
+      cJSON *j_model = cJSON_GetObjectItem(settings, "led_model");
+      cJSON *j_format = cJSON_GetObjectItem(settings, "pixel_format");
+      if (cJSON_IsString(j_model) || cJSON_IsString(j_format)) {
+        led_model_t new_model = wLed->get_model();
+        led_pixel_format_t new_format = wLed->get_pixel_format();
+        bool ok = true;
+        if (cJSON_IsString(j_model)) {
+          if (!strcmp(j_model->valuestring, "ws2812")) new_model = LED_MODEL_WS2812;
+          else if (!strcmp(j_model->valuestring, "ws2815")) new_model = LED_MODEL_WS2815;
+          else ok = false;
+        }
+        if (cJSON_IsString(j_format)) {
+          if (!strcmp(j_format->valuestring, "grb")) new_format = LED_PIXEL_FORMAT_GRB;
+          else if (!strcmp(j_format->valuestring, "rgb")) new_format = LED_PIXEL_FORMAT_RGB;
+          else ok = false;
+        }
+        if (!ok || !wLed->set_strip_type(new_model, new_format)) {
+          ESP_LOGW(TAG, "led: неизвестный led_model/pixel_format — игнор");
+        }
+      }
     }
 
     cJSON *state = cJSON_GetObjectItem(root, "state");
@@ -442,13 +457,41 @@ static esp_err_t f_file_create(httpd_req_t *req) {
     cJSON *id = cJSON_GetObjectItem(root, "id");
     cJSON *continuous = cJSON_GetObjectItem(root, "continuous");
 
-    if(cJSON_IsString(name) && cJSON_IsString(text) && cJSON_IsNumber(id) && cJSON_IsBool(continuous)) {
-      fs->createfile(name->valuestring, buf);
-      script_engine_compile_and_register(name->valuestring, id->valueint, continuous->valueint, text->valuestring);
+    const char *bad = nullptr;
+    if (!cJSON_IsString(name) || !name->valuestring[0]) bad = "name: non-empty string required";
+    else if (strchr(name->valuestring, '/')) bad = "name: '/' is not allowed";
+    else if (!cJSON_IsString(text) || !text->valuestring[0]) bad = "text: non-empty string required";
+    else if (!cJSON_IsNumber(id) || id->valueint < 0 || id->valueint > 255) bad = "id: number 0..255 required";
+    else if (!cJSON_IsBool(continuous)) bad = "continuous: bool required";
+    if (bad) {
+      ESP_LOGW(TAG, "create file: %s", bad);
+      free(buf);
+      cJSON_Delete(root);
+      return send_json_status(req, "status", false, "error", bad);
+    }
+
+    // сначала компилируем — на флеш попадает только рабочий скрипт. Иначе битый файл
+    // грузился бы при каждом старте (а до лимита инструкций мог и повесить загрузку)
+    char error[160] = {0};
+    bool registered = false;
+    bool ok = script_engine_compile_and_register(name->valuestring, id->valueint, cJSON_IsTrue(continuous),
+                                                 text->valuestring, -1, error, sizeof(error), &registered);
+    if (ok && !fs->createfile(name->valuestring, buf)) {
+      ok = false;
+      snprintf(error, sizeof(error), "file write failed");
+      ESP_LOGE(TAG, "create file '%s': %s", name->valuestring, error);
     }
     free(buf);
     cJSON_Delete(root);
-    return send_json_status(req, "status", true, nullptr, nullptr);
+
+    if (!ok) return send_json_status(req, "status", false, "error", error);
+
+    cJSON *resp = cJSON_CreateObject();
+    cJSON_AddBoolToObject(resp, "status", true);
+    cJSON_AddBoolToObject(resp, "registered", registered);
+    // пересохранили скрипт, чей id уже занят его старой версией: проверен, но заменится после ребута
+    if (!registered) cJSON_AddStringToObject(resp, "warning", "saved, the effect will update after reboot");
+    return send_resp_json(resp, req);
   }
   return send_json_status(req, "status", false, "error", "fail parse json");
 }

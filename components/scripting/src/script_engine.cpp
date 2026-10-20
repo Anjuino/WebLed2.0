@@ -9,6 +9,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <string>
 
 static const char *TAG = "ScriptEngine";
@@ -33,8 +34,20 @@ struct CompileJob {
   uint8_t id;
   SemaphoreHandle_t done;
   bool ok;
+  bool registered;     // эффект зарегистрирован сейчас; false при ok — только проверен (id занят старой версией)
   char error[160];
 };
+
+// ошибка задания: текст — вызывающему (веб/лог загрузки) и сразу в лог,
+// чтобы провал компиляции не терялся молча
+static void job_fail(CompileJob *job, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(job->error, sizeof(job->error), fmt, ap);
+    va_end(ap);
+    ESP_LOGW(TAG, "script '%s' id=%u: %s", job->name.c_str(), job->id, job->error);
+}
 
 static QueueHandle_t g_job_queue = nullptr;
 
@@ -118,28 +131,48 @@ static void script_apply(led *self, void *user_data)
     xSemaphoreGive(g_vm_mutex);
 }
 
+// эффект с этим id, если это скрипт (у встроенных apply другой), иначе nullptr
+static const LedEffect *find_script_effect(uint8_t id)
+{
+    size_t count = 0;
+    const LedEffect *fx = g_led->effects(&count);
+    for (size_t i = 0; i < count; i++) {
+        if (fx[i].id == id) return fx[i].apply == &script_apply ? &fx[i] : nullptr;
+    }
+    return nullptr;
+}
+
 // Собственно компиляция + регистрация — выполняется только внутри
 // script_engine_task(), никогда напрямую из вызывающего кода.
 static void process_job(CompileJob *job)
 {
     job->ok = false;
+    job->registered = false;
     job->error[0] = 0;
 
     if (!g_w || !g_led) {
-        snprintf(job->error, sizeof(job->error), "engine not initialised");
+        job_fail(job, "engine not initialised");
         return;
     }
     if (job->source.empty()) {
-        snprintf(job->error, sizeof(job->error), "empty source");
-        return;
-    }
-    if (g_led->is_valid_mode(job->id)) {
-        snprintf(job->error, sizeof(job->error), "id %u already in use", job->id);
+        job_fail(job, "empty source");
         return;
     }
 
+    // id занят тем же скриптом (пересохранение) — новую версию только проверяем:
+    // замены эффекта на лету пока нет, применится после перезагрузки
+    bool validate_only = false;
+    if (g_led->is_valid_mode(job->id)) {
+        const LedEffect *same = find_script_effect(job->id);
+        if (!same || same->name != job->name) {
+            job_fail(job, "id %u already in use", job->id);
+            return;
+        }
+        validate_only = true;
+    }
+
     if (xSemaphoreTake(g_vm_mutex, pdMS_TO_TICKS(3000)) != pdTRUE) {
-        snprintf(job->error, sizeof(job->error), "vm busy, try again");
+        job_fail(job, "vm busy, try again");
         return;
     }
 
@@ -150,7 +183,7 @@ static void process_job(CompileJob *job)
     WRError err = wr_compile(job->source.c_str(), (int)job->source.size(), &bytecode, &bytecode_len,
                              errMsg, WR_INCLUDE_GLOBALS | WR_NON_STRICT_VAR);
     if (err != WR_ERR_None) {
-        snprintf(job->error, sizeof(job->error), "compile: %s", errMsg[0] ? errMsg : "unknown error");
+        job_fail(job, "compile: %s", errMsg[0] ? errMsg : "unknown error");
         if (bytecode) wr_free(bytecode);
         xSemaphoreGive(g_vm_mutex);
         return;
@@ -158,23 +191,48 @@ static void process_job(CompileJob *job)
 
     WRContext *ctx = wr_newContext(g_w, bytecode, bytecode_len, true);
     if (!ctx) {
-        snprintf(job->error, sizeof(job->error), "wr_newContext failed: err=%d", (int)wr_getLastError(g_w));
+        job_fail(job, "wr_newContext failed: err=%d", (int)wr_getLastError(g_w));
         xSemaphoreGive(g_vm_mutex);
         return;
     }
 
-    wr_executeContext(ctx);
+    WRValue *top = wr_executeContext(ctx);
 
-    if (!wr_getFunction(ctx, "step")) {
-        snprintf(job->error, sizeof(job->error), "script does not define step()");
+    // верхний уровень обязан завершиться. Прерван по лимиту инструкций — значит бесконечный
+    // (или слишком долгий) цикл. Такой контекст нельзя регистрировать: каждый вызов step()
+    // продолжал бы этот цикл, и задача Led съела бы ядро до watchdog
+    if (wr_getYieldInfo(ctx)) {
+        job_fail(job, "top-level code did not finish (infinite loop?) - put the loop logic into step()");
+        wr_destroyContext(ctx);
+        xSemaphoreGive(g_vm_mutex);
+        return;
+    }
+    if (!top && wr_getLastError(g_w) != WR_ERR_None) {
+        job_fail(job, "runtime error in top-level code: err=%d", (int)wr_getLastError(g_w));
         wr_destroyContext(ctx);
         xSemaphoreGive(g_vm_mutex);
         return;
     }
 
+    if (!wr_getFunction(ctx, "step")) {
+        job_fail(job, "script does not define step()");
+        wr_destroyContext(ctx);
+        xSemaphoreGive(g_vm_mutex);
+        return;
+    }
+
+    if (validate_only) {
+        wr_destroyContext(ctx);
+        xSemaphoreGive(g_vm_mutex);
+        ESP_LOGI(TAG, "script '%s' id=%u: OK, applies after reboot (id is held by the current version)",
+                 job->name.c_str(), job->id);
+        job->ok = true;
+        return;
+    }
+
     ScriptEffect *fx = (ScriptEffect *)malloc(sizeof(ScriptEffect));
     if (!fx) {
-        snprintf(job->error, sizeof(job->error), "out of memory");
+        job_fail(job, "out of memory");
         wr_destroyContext(ctx);
         xSemaphoreGive(g_vm_mutex);
         return;
@@ -189,6 +247,7 @@ static void process_job(CompileJob *job)
 
     ESP_LOGI(TAG, "registered script effect id=%u name='%s' bytecode=%d B", job->id, job->name.c_str(), bytecode_len);
     job->ok = true;
+    job->registered = true;
 }
 
 // Загрузка скриптов с диска при старте. Выполняется на этой же задаче,
@@ -218,9 +277,7 @@ static void script_engine_load_from_fs()
 
             if (boot_job.ok) {
                 ESP_LOGI(TAG, "loaded script '%s' id=%u", item.name.c_str(), boot_job.id);
-            } else {
-                ESP_LOGW(TAG, "failed to load script '%s': %s", item.name.c_str(), boot_job.error);
-            }
+            }   // ошибку уже написал job_fail
         } else {
             ESP_LOGW(TAG, "skip '%s': invalid script file format", item.name.c_str());
         }
@@ -245,8 +302,9 @@ static void script_engine_task(void *)
 
 static bool submit_compile_job(const char *name, uint8_t id, bool continuous,
                                 const char *source, int source_len,
-                                char *error, size_t error_len)
+                                char *error, size_t error_len, bool *registered)
 {
+    if (registered) *registered = false;
     if (!g_job_queue) {
         if (error && error_len) snprintf(error, error_len, "engine not started");
         return false;
@@ -258,6 +316,7 @@ static bool submit_compile_job(const char *name, uint8_t id, bool continuous,
     job.continuous = continuous;
     job.id = id;
     job.ok = false;
+    job.registered = false;
     job.error[0] = 0;
     job.done = xSemaphoreCreateBinary();
     if (!job.done) {
@@ -275,6 +334,7 @@ static bool submit_compile_job(const char *name, uint8_t id, bool continuous,
     xSemaphoreTake(job.done, portMAX_DELAY);
     vSemaphoreDelete(job.done);
 
+    if (registered) *registered = job.registered;
     if (!job.ok && error && error_len) {
         strncpy(error, job.error, error_len - 1);
         error[error_len - 1] = 0;
@@ -287,6 +347,7 @@ void script_engine_start(led *wLed, class FileSystem *_fs)
     g_led = wLed;
     g_fs = _fs;
     g_w   = wr_newState();
+    wr_setInstructionsPerSlice(g_w, 100000);
     g_vm_mutex = xSemaphoreCreateMutex();
     g_job_queue = xQueueCreate(2, sizeof(CompileJob*));
 
@@ -309,7 +370,7 @@ void script_engine_start(led *wLed, class FileSystem *_fs)
 
 bool script_engine_compile_and_register(const char *name, uint8_t id, bool continuous,
                                          const char *source, int source_len,
-                                         char *error, size_t error_len)
+                                         char *error, size_t error_len, bool *registered)
 {
-    return submit_compile_job(name, id, continuous, source, source_len, error, error_len);
+    return submit_compile_job(name, id, continuous, source, source_len, error, error_len, registered);
 }

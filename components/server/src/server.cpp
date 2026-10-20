@@ -15,6 +15,7 @@
 #include "script_engine.h"
 #include "sntp_time.h"
 #include "mdns.h"
+#include "lwip/sockets.h"
 
 
 #ifdef CONFIG_SERVER_HTTPS
@@ -26,13 +27,27 @@
 
 static const char *TAG = "Server";
 
-// тестовая веб-страница, встроена через target_add_binary_data(... TEXT)
-extern const char index_html_start[] asm("_binary_index_html_start");
+// веб-страница, сжатая gzip при сборке (CMakeLists.txt + web/gzip_page.py).
+// Распаковывает браузер — gzip понимают все, отдаём как есть
+extern const char index_html_gz_start[] asm("_binary_index_html_gz_start");
+extern const char index_html_gz_end[]   asm("_binary_index_html_gz_end");
 
 static esp_err_t index_handler(httpd_req_t *req) {
   httpd_resp_set_type(req, "text/html; charset=utf-8");
+  httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
   httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
-  return httpd_resp_send(req, index_html_start, HTTPD_RESP_USE_STRLEN);
+  return httpd_resp_send(req, index_html_gz_start, index_html_gz_end - index_html_gz_start);
+}
+
+// Сервер пишет заголовки и тело ответа отдельными маленькими пакетами. Nagle придерживает второй,
+// пока не придёт ACK на первый, а Windows шлёт ACK с задержкой до 200 мс — отсюда ~300 мс на
+// каждый запрос. TCP_NODELAY отправляет пакеты сразу
+static esp_err_t on_socket_open(httpd_handle_t hd, int sockfd) {
+  int one = 1;
+  if (setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one)) != 0) {
+    ESP_LOGW(TAG, "TCP_NODELAY failed on socket %d", sockfd);
+  }
+  return ESP_OK;
 }
 
 #ifdef CONFIG_SERVER_HTTPS
@@ -126,6 +141,7 @@ esp_err_t server::start() {
   config.keep_alive_idle = 3;
   config.keep_alive_interval = 3;   
   config.keep_alive_count = 2;
+  config.open_fn = on_socket_open;
 
   esp_err_t err = httpd_start(&m_server, &config);
 #endif

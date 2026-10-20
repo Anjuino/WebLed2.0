@@ -48,6 +48,12 @@ class device {
     bool has_automations() { return !automations.empty(); };
 
     bool is_time_synced();
+
+    std::string load_config(const char *key);         // JSON конфига автоматики из NVS ("" — нет)
+    bool save_config(const char *key, cJSON *json);   // пишет blob'ом, без commit
+
+  private:
+    template <typename T> void add_automation(const char *key);
 };
 
 

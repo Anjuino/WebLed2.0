@@ -109,6 +109,10 @@
   label.f > span:first-child { width: 96px; flex: none; color: var(--muted); font-size: 13px; }
   label.f > input:not([type=range]):not([type=checkbox]):not([type=color]), label.f > select { flex: 1; }
   .num { width: 76px; flex: none; }
+  .sfx-field { position: relative; flex: 1; display: flex; min-width: 0; }
+  .sfx-field input { flex: 1; min-width: 0; padding-right: 58px; }
+  .sfx { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 13px; pointer-events: none; }
+  .f-hint { margin: -4px 0 10px 106px; }   /* под полем: отступ = ширина подписи 96px + промежуток 10px */
 
   input[type=range] { -webkit-appearance: none; appearance: none; flex: 1; height: 6px; padding: 0; border: none; border-radius: 3px; cursor: pointer;
                       background: linear-gradient(90deg, var(--a1), var(--a2)) 0 / var(--p, 50%) 100% no-repeat, var(--line-2); }
@@ -199,12 +203,11 @@
 
   /* ---------- лента ---------- */
   .modes { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
-  .mode { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 16px 10px 12px; border-radius: 14px; cursor: pointer;
+  .mode { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 14px 10px; min-height: 64px; border-radius: 14px; cursor: pointer;
           background: var(--surface-2); border: 1px solid var(--line); color: var(--text); font: inherit; transition: border-color .15s, transform .1s, background .15s; }
   .mode:hover { border-color: var(--line-2); background: var(--surface-3); }
   .mode:active { transform: scale(.97); }
   .mode.active { border-color: var(--a1); background: linear-gradient(160deg, rgba(91,140,255,.14), rgba(164,107,255,.06)); box-shadow: 0 0 0 1px var(--a1) inset; }
-  .mode-prev { width: 42px; height: 42px; border-radius: 50%; --gs: 14px; }
   .mode-name { font-weight: 600; font-size: 13px; text-align: center; line-height: 1.25; }
   .mode-id { font-size: 11px; color: var(--dim); }
   .color-big { display: flex; align-items: center; gap: 16px; }
@@ -232,12 +235,16 @@
   .day-row { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; background: var(--surface-2); }
   .day-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
   .day-head b { flex: 1; min-width: 120px; }
-  .iv-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; padding: 6px 8px; background: var(--surface); border-radius: 8px; }
-  .iv-row input[type=time] { width: 110px; }
-  .iv-row select { min-width: 90px; }
-  .iv-row input[type=range] { flex: 1; min-width: 100px; }
-  .iv-row input[type=color] { padding: 0; }
-  .day-toggle { min-width: 44px; font-weight: 600; }
+  .iv-row { display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; padding: 8px 10px; background: var(--surface); border-radius: 8px; }
+  .iv-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+  .iv-line input[type=time] { flex: 1; min-width: 0; }
+  .iv-row select { width: 100%; }
+  .iv-row input[type=color] { padding: 0; flex: none; }
+  .iv-sl { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 140px; margin: 0; }
+  .iv-sl > span { color: var(--muted); font-size: 12px; width: 34px; flex: none; }
+  .iv-sl .val { min-width: 26px; font-size: 12px; }
+  [data-day-toggles] { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+  .day-toggle { min-width: 0; padding-left: 0; padding-right: 0; font-weight: 600; }
   .ac-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
   .ac-head b { flex: 1; font-size: 16px; }
   .ac-icon { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; font-size: 19px; background: var(--surface-3); }
@@ -274,6 +281,7 @@
   .savebar { position: sticky; bottom: 16px; z-index: 5; margin-top: 16px; padding: 12px 16px; border-radius: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
              background: rgba(24, 29, 38, .9); backdrop-filter: blur(12px); border: 1px solid var(--line-2); box-shadow: 0 10px 30px rgba(0,0,0,.4); transition: border-color .2s; }
   .savebar.dirty { border-color: rgba(251, 191, 36, .45); }
+  .savebar:not(.dirty) { display: none; }   /* изменений нет — не занимаем экран; точка в меню всё равно подскажет */
   .savebar .sb-t { flex: 1; min-width: 180px; color: var(--muted); font-size: 13px; }
 
   /* ---------- эффекты ---------- */
@@ -306,7 +314,7 @@
 
   /* ---------- система / лог ---------- */
   .mem { margin: 14px 0; }
-  .mem-h { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; }
+  .mem-h { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; font-size: 13px; margin-bottom: 6px; }
   .mem-h span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
   .console { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; }
   #log { max-height: 440px; overflow: auto; margin-top: 12px; font: 12px/1.5 ui-monospace, Consolas, monospace; }
@@ -318,6 +326,13 @@
   .m.GET { color: #7dd3fc; } .m.POST { color: #c4b5fd; } .m.DELETE { color: #fca5a5; }
   .st-ok { color: var(--ok); font-weight: 700; } .st-err { color: var(--err); font-weight: 700; }
   .danger-zone { border-color: rgba(248, 113, 113, .25); }
+  .file-pick { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px dashed var(--line-2); border-radius: 12px;
+               cursor: pointer; transition: border-color .15s, background .15s; }
+  .file-pick:hover { border-color: var(--a1); background: rgba(91, 140, 255, .05); }
+  .file-pick input { display: none; }
+  .file-pick .fp-b { flex: 1; min-width: 0; }
+  .file-pick .fp-b b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ota-bar { height: 8px; margin-top: 12px; }
 
   /* ---------- оверлеи ---------- */
   .modal, .overlay { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px;
@@ -367,6 +382,10 @@
     #toasts { left: 16px; right: 16px; bottom: calc(76px + env(safe-area-inset-bottom)); align-items: stretch; }
     .toast { max-width: none; }
     .savebar { bottom: calc(76px + env(safe-area-inset-bottom)); }
+    .f-hint { margin-left: 0; }
+    .card-h.stack { flex-direction: column; align-items: stretch; }
+    .card-h.stack .seg { display: flex; }
+    .card-h.stack .seg button { flex: 1; }
     .console { grid-template-columns: auto 1fr; }
     .console button { grid-column: 1 / -1; }
   }
@@ -383,6 +402,7 @@
     <a class="nav" href="#/fx" data-nav="fx"><i data-ic="code"></i><span>Эффекты</span></a>
     <a class="nav" href="#/net" data-nav="net"><i data-ic="wifi"></i><span>Сеть</span></a>
     <a class="nav" href="#/sys" data-nav="sys"><i data-ic="chip"></i><span>Система</span></a>
+    <a class="nav" href="#/api" data-nav="api"><i data-ic="terminal"></i><span>Консоль</span></a>
   </nav>
   <div class="side-foot">
     <span class="conn">подключение…</span>
@@ -576,11 +596,12 @@
       <div class="kv" id="nKv"></div>
     </div>
     <div class="card">
-      <div class="card-h"><h3>Сменить подключение</h3>
+      <div class="card-h stack"><h3>Сменить подключение</h3>
         <div class="seg" id="netSeg"><button data-seg="sta" class="active">Клиент</button><button data-seg="ap">Точка доступа</button></div></div>
       <label class="f"><span>SSID</span><input type="text" id="netSsid" placeholder="имя сети"></label>
       <label class="f"><span>Пароль</span><span class="pw"><input type="password" id="netPass" placeholder="пароль"><button class="btn icon" onclick="togglePw('netPass', this)" title="Показать"><i data-ic="eye"></i></button></span></label>
-      <label class="f"><span>mDNS имя</span><div class="mdns-row"><input type="text" id="netMdns" placeholder="myled" maxlength="15" pattern="[A-Za-z0-9_\-]+"><span class="muted small">.local</span></div><small class="muted">Только буквы, цифры, _ и - (до 15 символов). Суффикс .local припишется автоматически.</small></label>
+      <label class="f"><span>mDNS имя</span><span class="sfx-field"><input type="text" id="netMdns" placeholder="myled" maxlength="15" pattern="[A-Za-z0-9_\-]+"><span class="sfx">.local</span></span></label>
+      <p class="muted small f-hint">Латиница, цифры, _ и - (до 15 символов). Меняется сразу, без перезагрузки.</p>
       <p class="muted small" id="netHint">Устройство подключится к роутеру. После перезагрузки оно может получить новый IP.</p>
       <div class="row between">
         <span></span>
@@ -610,28 +631,59 @@
     <div class="card">
       <div class="card-h"><h3>Настройки ленты</h3></div>
       <label class="f"><span>Светодиодов</span><input type="number" id="ledCount" min="1"></label>
+      <label class="f"><span>Тип ленты</span><select id="ledModel"><option value="ws2812">WS2812 (5 В)</option><option value="ws2815">WS2815 (12 В)</option></select></label>
+      <label class="f"><span>Порядок цветов</span><select id="ledPxFmt"><option value="grb">GRB</option><option value="rgb">RGB</option></select></label>
+      <p class="muted small">Если красный горит зелёным (и наоборот) — смените порядок цветов. Лента пересоздаётся сразу, без перезагрузки.</p>
       <div class="swrow"><span><b>Запоминать состояние</b><br><span class="muted small">save_mode — после перезагрузки лента вернётся в последний режим</span></span><span class="sw"><input type="checkbox" id="ledSave"><span></span></span></div>
       <div class="row between mt"><span></span><button class="btn primary" onclick="applySettings()"><i data-ic="check"></i>Сохранить</button></div>
     </div>
     <div class="card">
       <div class="card-h"><h3>Обновление данных</h3><span class="muted small" id="stAt"></span></div>
       <div class="swrow"><span><b>Опрашивать state</b><br><span class="muted small">каждые 30 секунд, пока вкладка открыта</span></span><span class="sw"><input type="checkbox" id="stAuto" checked><span></span></span></div>
-      <details class="mt"><summary class="muted small" style="cursor:pointer">Последний ответ /api/device?state</summary><pre id="stRaw" class="mt">—</pre></details>
+    </div>
+    <div class="card danger-zone">
+      <div class="card-h"><h3>Обновление прошивки</h3><span class="badge acc" id="otaVer"></span></div>
+      <label class="file-pick">
+        <input type="file" id="otaFile" accept=".bin,application/octet-stream">
+        <i data-ic="file"></i>
+        <span class="fp-b"><b id="otaName">Выберите файл прошивки .bin</b><span class="muted small" id="otaInfo">build/WebLed2.0.bin</span></span>
+      </label>
+      <div class="bar ota-bar" id="otaBarWrap" hidden><i id="otaBar" style="width:0"></i></div>
+      <div class="row between mt">
+        <span class="muted small" id="otaStatus"></span>
+        <button class="btn danger" id="otaBtn" onclick="uploadFirmware()" disabled><i data-ic="send"></i>Загрузить прошивку</button>
+      </div>
+      <p class="muted small">После загрузки устройство перезагрузится. Если новая прошивка не запустится — загрузчик сам вернёт предыдущую.</p>
     </div>
     <div class="card danger-zone">
       <div class="card-h"><h3>Перезагрузка</h3></div>
       <p class="muted">Перезапуск контроллера. Страница сама дождётся, пока устройство вернётся в сеть.</p>
       <button class="btn danger" onclick="restart()"><i data-ic="power"></i>Перезагрузить устройство</button>
     </div>
+  </div>
+</section>
+
+<!-- ================= КОНСОЛЬ ================= -->
+<section class="page" id="p-api" hidden>
+  <div class="ph">
+    <div><h1>Консоль</h1><p>Ручные запросы к API и лог всех запросов страницы — для отладки</p></div>
+  </div>
+  <div class="grid">
     <div class="card span2">
-      <div class="card-h"><h3>API-консоль</h3><button class="btn sm ghost" onclick="$('log').innerHTML=''">Очистить лог</button></div>
+      <div class="card-h"><h3>Запрос</h3></div>
       <div class="console">
         <select id="rawMethod"><option>GET</option><option>POST</option><option>DELETE</option></select>
         <input type="text" id="rawUrl" value="/api/led">
         <button class="btn primary" onclick="sendRaw()"><i data-ic="send"></i>Отправить</button>
       </div>
       <textarea id="rawBody" class="code mt" style="min-height:70px" placeholder='тело запроса для POST, например {"state":{"mode":254}}'></textarea>
+    </div>
+    <div class="card span2">
+      <div class="card-h"><h3>Лог запросов</h3><button class="btn sm ghost" onclick="$('log').innerHTML=''">Очистить</button></div>
       <div id="log"></div>
+    </div>
+    <div class="card span2">
+      <details><summary class="muted" style="cursor:pointer">Последний ответ /api/device?state</summary><pre id="stRaw" class="mt">—</pre></details>
     </div>
   </div>
 </section>
@@ -659,7 +711,6 @@
 <div id="toasts"></div>
 
 <script>
-console.log('[WebLed] script v=schedule-7days-r4 loaded, time=' + new Date().toISOString());
 
 const $ = id => document.getElementById(id);
 const $$ = (s, r = document) => r ? [...r.querySelectorAll(s)] : [];
@@ -691,7 +742,8 @@ const ICONS = {
   trash: '<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>',
   play: '<path d="m7 4 13 8-13 8z"/>',
   eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
-  file: '<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5"/>'
+  file: '<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5"/>',
+  terminal: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/>'
 };
 const svg = n => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[n] || ''}</svg>`;
 function icons(root = document) { $$('i[data-ic]', root).forEach(el => { if (!el.firstChild) el.innerHTML = svg(el.dataset.ic); }); }
@@ -847,9 +899,9 @@ function modeOptions(sel) {
   return html;
 }
 // раскрашивает кружок-превью (.prev) под режим: радуга крутится, скрипты пульсируют, 255 — погашен
-function applyPreview(el, mode, c, bright = 255, speed = 128) {
+function applyPreview(el, mode, c, bright = 100, speed = 50) {
   if (!el) return '';                                  // защита: элемент не найден — без падения
-  const name = modeName(mode), f = Math.max(.18, bright / 255);
+  const name = modeName(mode), f = Math.max(.18, bright / 100);
   const col = `rgb(${Math.round(c.r * f)},${Math.round(c.g * f)},${Math.round(c.b * f)})`;
   el.classList.remove('rainbow', 'pulse', 'off', 'pix');
   el.style.background = '';
@@ -862,7 +914,7 @@ function applyPreview(el, mode, c, bright = 255, speed = 128) {
     el.style.setProperty('--glow', col);
     if (mode !== 254) el.classList.add('pulse');
   }
-  el.style.setProperty('--dur', (3.5 - speed / 255 * 3).toFixed(2) + 's');
+  el.style.setProperty('--dur', (3.5 - speed / 100 * 3).toFixed(2) + 's');
   return col;
 }
 
@@ -890,18 +942,25 @@ function hasAutomations() {
   return !!(lastState && (lastState.button || lastState.light_sensor || lastState.schedule)) || !!(cfgOrig && (cfgOrig.button || cfgOrig.light_sensor || cfgOrig.schedule));
 }
 
+let modeGridSig = '';
 function renderLed() {
   if (!ledInfo) return;
   const s = ledInfo.state, manual = !!ledInfo.settings.manual;
   $('ledBanner').hidden = manual || !hasAutomations();
   $('ledManualBanner').hidden = !manual;
 
-  $('modeCount').textContent = modes.length + ' шт.';
-  $('modeGrid').innerHTML = modes.map(m =>
-    `<button class="mode ${m.id_mode === s.mode ? 'active' : ''}" data-mode="${m.id_mode}">
-       <span class="mode-prev prev" data-mp="${m.id_mode}"></span>
-       <span class="mode-name">${esc(m.name)}</span><span class="mode-id">#${m.id_mode}</span></button>`).join('');
-  $$('[data-mp]').forEach(el => applyPreview(el, +el.dataset.mp, s.color, 255, s.speed));
+  // карточки пересоздаём только когда поменялся сам список режимов — иначе при каждом
+  // движении ползунка/пипетки DOM сетки строился бы заново
+  const sig = modes.map(m => m.id_mode + ':' + m.name).join('|');
+  if (sig !== modeGridSig) {
+    modeGridSig = sig;
+    $('modeCount').textContent = modes.length + ' шт.';
+    // простая сетка: название и номер, без цветных превью
+    $('modeGrid').innerHTML = modes.map(m =>
+      `<button class="mode" data-mode="${m.id_mode}">
+         <span class="mode-name">${esc(m.name)}</span><span class="mode-id">#${m.id_mode}</span></button>`).join('');
+  }
+  $$('#modeGrid [data-mode]').forEach(b => b.classList.toggle('active', +b.dataset.mode === s.mode));
 
   const h = hex(s.color.r, s.color.g, s.color.b);
   setVal($('ledColor'), h);
@@ -933,15 +992,26 @@ async function postLed(body, quiet = false) {
   return r;
 }
 
-// изменения с контролов копим и отправляем одним запросом раз в 200 мс
-let pend = {}, pendT = null;
+// изменения с контролов копим и шлём не чаще раза в 200 мс и не больше одного запроса
+// одновременно: пока предыдущий в пути, новые значения складываются в pend и уходят
+// одним запросом после ответа. Иначе при медленном ответе ESP запросы копятся в очередь
+let pend = {}, pendT = null, pendBusy = false;
 function queueState(part, force) {
   Object.assign(ledInfo.state, part);
   renderLed(); renderHome();
   if (!force && !$('ledLive').checked) return;
   Object.assign(pend, part);
   clearTimeout(pendT);
-  pendT = setTimeout(() => { const b = { state: pend }; pend = {}; postLed(b, true); }, 200);
+  pendT = setTimeout(flushState, 200);
+}
+async function flushState() {
+  if (pendBusy || !Object.keys(pend).length) return;
+  const b = { state: pend };
+  pend = {};
+  pendBusy = true;
+  try { await postLed(b, true); }
+  finally { pendBusy = false; }
+  if (Object.keys(pend).length) flushState();
 }
 
 $('modeGrid').addEventListener('click', async e => {
@@ -951,7 +1021,13 @@ $('modeGrid').addEventListener('click', async e => {
   const r = await postLed({ state: { mode: id } });
   if (r.ok) { ledInfo.state.mode = id; renderLed(); renderHome(); }
 });
-$('ledColor').addEventListener('input', e => queueState({ color: rgb(e.target.value) }));
+// input — только превью на странице; change — пипетку отпустили, отправляем итоговый цвет
+$('ledColor').addEventListener('input', e => {
+  const c = rgb(e.target.value);
+  $('ledHex').textContent = e.target.value.toUpperCase();
+  $('ledRgb').textContent = `R ${c.r} · G ${c.g} · B ${c.b}`;
+});
+$('ledColor').addEventListener('change', e => queueState({ color: rgb(e.target.value) }));
 $('ledBright').addEventListener('input', e => queueState({ brightness: +e.target.value }));
 $('ledSpeed').addEventListener('input', e => queueState({ speed: +e.target.value }));
 $('hBright').addEventListener('input', e => queueState({ brightness: +e.target.value }, true));
@@ -985,7 +1061,7 @@ async function setManual(on) {
 }
 
 // ---------- попиксельно ----------
-const PX_MAX = 300, PX_CHUNK = 80;
+const PX_MAX = 300, PX_CHUNK = 160;   // ~45 байт на пиксель, тело запроса на устройстве < 8 КБ
 let pix = [], painting = false;
 
 function buildStrip() {
@@ -1037,7 +1113,7 @@ async function sendPixels() {
   btn.disabled = true;
   let sent = 0;
   try {
-    // тело запроса на устройстве ограничено 4 КБ — шлём пачками
+    // тело запроса на устройстве ограничено 8 КБ — шлём пачками
     for (let i = 0; i < list.length; i += PX_CHUNK) {
       const r = await postLed({ leds_arr: list.slice(i, i + PX_CHUNK) });
       if (!r.ok) break;
@@ -1076,9 +1152,9 @@ function renderTiles() {
     tb.classList.toggle('hot', i.cpu_temp > 65);
     tb.firstElementChild.style.width = Math.max(0, Math.min(100, (i.cpu_temp - 20) / 60 * 100)) + '%';
     $('tIram').textContent = fmtBytes(m.iram_free);
-    $('tIramS').textContent = `свободно из ${fmtBytes(m.iram_total)} · мин ${fmtBytes(m.iram_min_free)}`;
+    $('tIramS').textContent = `свободно из ${fmtBytes(m.iram_total)} · минимум свободного ${fmtBytes(m.iram_min_free)}`;
     $('tIramBar').style.width = (m.iram_total ? (1 - m.iram_free / m.iram_total) * 100 : 0) + '%';
-    $('sideTime').textContent = i.time || '—';
+    $('sideTime').textContent = (i.time || '—') + (i.version ? ' · v' + i.version : '');
     $('topTime').textContent = i.time ? i.time.slice(11) : '';
   }
   const ls = lastState && lastState.light_sensor;
@@ -1095,7 +1171,8 @@ function renderTiles() {
   if (netInfo) {
     const sta = netInfo.mode && netInfo.mode.includes('STA');
     $('tNet').textContent = sta ? (netInfo.sta_ssid || 'STA') : (netInfo.ap_ssid || netInfo.mode || '—');
-    $('tNetS').textContent = { STA: 'клиент роутера', AP: 'точка доступа', 'AP+STA': 'клиент + точка доступа' }[netInfo.mode] || netInfo.mode;
+    const modeTxt = { STA: 'клиент роутера', AP: 'точка доступа', 'AP+STA': 'клиент + точка доступа' }[netInfo.mode] || netInfo.mode;
+    $('tNetS').textContent = netInfo.ip ? `${modeTxt} · ${netInfo.ip}` : modeTxt;
   }
 }
 
@@ -1107,7 +1184,8 @@ function renderHomeAutos() {
     let when = 'круглосуточно', what = '—', ledInfo2 = null;
     if (k === 'schedule') {
       const days = c.days || [];
-      const today = new Date().getDay();
+      // день недели по часам устройства (браузер может быть в другом поясе)
+      const today = lastInfo && lastInfo.time ? new Date(lastInfo.time.slice(0, 10) + 'T12:00').getDay() : new Date().getDay();
       const todayDay = days.find(x => x.day === today);
       const intervals = todayDay ? (todayDay.intervals || []) : [];
       if (intervals.length === 0) { when = 'сегодня пусто'; what = `${days.length} дн. в расписании`; }
@@ -1119,7 +1197,7 @@ function renderHomeAutos() {
     } else {
       const a = c.action || {}, t = a.time;
       when = t ? `${hm(t.start)}–${hm(t.end)}` : 'круглосуточно';
-      what = k === 'button' ? `держит ${human(a.hold || 0)}`
+      what = k === 'button' ? `${a.hold ? 'держит ' + human(a.hold) : 'держит до повторного нажатия'}${a.repeat === 'release' ? ', повтор отпускает' : ''}`
            : `темно ${a.dark < a.light ? '≤' : '≥'} ${a.dark}, светло ${a.dark < a.light ? '≥' : '≤'} ${a.light}`;
       ledInfo2 = a.led;
     }
@@ -1158,27 +1236,118 @@ let stateTimer = setInterval(() => {
 }, 30000);
 
 // ---------- система ----------
+// «занято 156,8 КБ из 320,5 КБ · свободно 163,7 КБ · минимум свободного 158,9 КБ»
+// полоса под строкой показывает занятую долю
+function memText(total, free, minFree) {
+  return `занято ${fmtBytes(total - free)} из ${fmtBytes(total)} · свободно ${fmtBytes(free)} · минимум свободного ${fmtBytes(minFree)}`;
+}
+
 function renderSys() {
   if (lastInfo) {
     const i = lastInfo, m = i.memory_info || {};
     $('sTemp').textContent = i.cpu_temp != null ? i.cpu_temp.toFixed(1) + ' °C' : '';
     $('sTemp').className = 'badge ' + (i.cpu_temp > 65 ? 'err' : 'acc');
-    $('sKv').innerHTML = `<span>Время</span><span>${esc(i.time || '—')}</span><span>Светодиодов</span><span>${ledInfo ? ledInfo.settings.led_count : '—'}</span>`;
-    $('sIram').textContent = `${fmtBytes(m.iram_total - m.iram_free)} / ${fmtBytes(m.iram_total)} · мин своб. ${fmtBytes(m.iram_min_free)}`;
+    $('otaVer').textContent = i.version ? 'сейчас v' + i.version : '';
+    $('sKv').innerHTML = `<span>Прошивка</span><span>${esc(i.version || '—')}</span><span>Время</span><span>${esc(i.time || '—')}</span><span>Светодиодов</span><span>${ledInfo ? ledInfo.settings.led_count : '—'}</span>`;
+    $('sIram').textContent = memText(m.iram_total, m.iram_free, m.iram_min_free);
     $('sIramBar').style.width = (m.iram_total ? (1 - m.iram_free / m.iram_total) * 100 : 0) + '%';
-    $('sPsram').textContent = m.psram_total ? `${fmtBytes(m.psram_total - m.psram_free)} / ${fmtBytes(m.psram_total)} · мин своб. ${fmtBytes(m.psram_min_free)}` : 'нет';
+    $('sPsram').textContent = m.psram_total ? memText(m.psram_total, m.psram_free, m.psram_min_free) : 'нет';
     $('sPsramBar').style.width = (m.psram_total ? (1 - m.psram_free / m.psram_total) * 100 : 0) + '%';
   }
   if (ledInfo) {
     setVal($('ledCount'), ledInfo.settings.led_count);
+    setVal($('ledModel'), ledInfo.settings.led_model || 'ws2812');
+    setVal($('ledPxFmt'), ledInfo.settings.pixel_format || 'grb');
     if (document.activeElement !== $('ledSave')) $('ledSave').checked = !!ledInfo.settings.save_mode;
   }
 }
 
 async function applySettings() {
-  const r = await api('POST', '/api/led', { settings: { led_count: +$('ledCount').value, save_mode: $('ledSave').checked } });
+  const r = await api('POST', '/api/led', { settings: {
+    led_count: +$('ledCount').value,
+    save_mode: $('ledSave').checked,
+    led_model: $('ledModel').value,
+    pixel_format: $('ledPxFmt').value,
+  } });
   if (r.ok) { toast('Настройки ленты сохранены'); await loadLed(); }
   else toast('Не удалось: ' + errText(r), 'err');
+}
+
+// ---------- обновление прошивки ----------
+const OTA_MAX = 0x190000;   // размер app-раздела (partitions.csv): больше в OTA-раздел не влезет
+let otaFile = null;
+
+$('otaFile').addEventListener('change', async e => {
+  otaFile = null;
+  $('otaBtn').disabled = true;
+  $('otaBarWrap').hidden = true;
+  const f = e.target.files[0];
+  if (!f) return;
+  $('otaName').textContent = f.name;
+  $('otaInfo').textContent = fmtBytes(f.size);
+
+  // проверки до отправки: расширение, размер, сигнатура образа ESP (первый байт 0xE9)
+  let err = '';
+  if (!/\.bin$/i.test(f.name)) err = 'нужен файл .bin';
+  else if (f.size < 1024) err = 'файл слишком маленький';
+  else if (f.size > OTA_MAX) err = `больше раздела прошивки (${fmtBytes(OTA_MAX)})`;
+  else {
+    const head = new Uint8Array(await f.slice(0, 1).arrayBuffer());
+    if (head[0] !== 0xE9) err = 'это не прошивка ESP (нет сигнатуры образа)';
+  }
+  if (err) {
+    $('otaInfo').textContent = fmtBytes(f.size) + ' · ' + err;
+    $('otaStatus').textContent = '';
+    return toast('Прошивка: ' + err, 'warn');
+  }
+  otaFile = f;
+  $('otaStatus').textContent = 'готово к загрузке';
+  $('otaBtn').disabled = false;
+});
+
+// XMLHttpRequest, а не fetch: только он показывает прогресс отправки
+function uploadFirmware() {
+  if (!otaFile) return;
+  ask('Загрузить прошивку?', `«${otaFile.name}», ${fmtBytes(otaFile.size)}. Устройство запишет её и перезагрузится. Не закрывайте страницу до окончания загрузки.`, 'Загрузить', true)
+    .then(yes => {
+      if (!yes) return;
+      const btn = $('otaBtn'), t0 = performance.now();
+      btn.disabled = true;
+      $('otaFile').disabled = true;
+      $('otaBarWrap').hidden = false;
+      $('otaBar').style.width = '0';
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/ota/local-upload');
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      xhr.timeout = 180000;
+      xhr.upload.onprogress = ev => {
+        if (!ev.lengthComputable) return;
+        const pct = Math.round(ev.loaded / ev.total * 100);
+        $('otaBar').style.width = pct + '%';
+        $('otaStatus').textContent = pct < 100 ? `загрузка ${pct}% · ${fmtBytes(ev.loaded)} из ${fmtBytes(ev.total)}` : 'запись во флеш…';
+      };
+      const done = (ok, status, text) => {
+        logEntry('POST', '/api/ota/local-upload', `<${otaFile.name}, ${otaFile.size} байт>`, status, Math.round(performance.now() - t0), text, ok);
+        $('otaFile').disabled = false;
+        if (ok) {
+          $('otaStatus').textContent = 'прошивка записана';
+          waitReboot('Новая прошивка запускается. Если она не поднимется — загрузчик вернёт предыдущую.');
+        } else {
+          btn.disabled = false;
+          $('otaStatus').textContent = 'ошибка';
+          toast('Прошивка не загружена: ' + (text || 'нет связи'), 'err');
+        }
+      };
+      xhr.onload = () => {
+        let data = null;
+        try { data = JSON.parse(xhr.responseText); } catch (e) { }
+        done(xhr.status === 200 && data && data.success === true, xhr.status, xhr.responseText);
+      };
+      xhr.onerror = () => done(false, 0, 'нет связи');
+      xhr.ontimeout = () => done(false, 0, 'таймаут');
+      xhr.send(otaFile);
+    });
 }
 
 async function restart() {
@@ -1205,6 +1374,7 @@ async function loadNet() {
   const n = netInfo;
   $('nMode').textContent = { STA: 'Клиент роутера', AP: 'Точка доступа', 'AP+STA': 'Клиент + точка', Null: 'Выключен' }[n.mode] || n.mode;
   let kv = '';
+  if (n.ip) kv += `<span>IP</span><span>${esc(n.ip)}</span>`;
   if (n.sta_ssid !== undefined) kv += `<span>Сеть (STA)</span><span>${esc(n.sta_ssid || '—')}</span><span>Пароль STA</span><span data-secret="${esc(n.sta_password || '')}">••••••••</span>`;
   if (n.ap_ssid !== undefined) kv += `<span>Точка (AP)</span><span>${esc(n.ap_ssid || '—')}</span><span>Пароль AP</span><span data-secret="${esc(n.ap_password || '')}">••••••••</span>`;
   if (n.mdns !== undefined) kv += `<span>mDNS имя</span><span>${esc(n.mdns || '—')}.local</span>`;
@@ -1263,6 +1433,14 @@ $('scanList').addEventListener('click', e => {
 
 async function applyNet() {
   const ssid = $('netSsid').value.trim(), pass = $('netPass').value;
+  const mdnsOnly = $('netMdns').value.trim();
+  // меняется только mDNS-имя — устройство применяет его сразу, без перезагрузки
+  if (!ssid && mdnsOnly && (!netInfo || mdnsOnly !== netInfo.mdns)) {
+    const r = await api('POST', '/api/network', { mdns: mdnsOnly });
+    if (!r.ok) return toast('mDNS: ' + errText(r), 'err');
+    toast(`Имя изменено: ${mdnsOnly}.local`);
+    return loadNet();
+  }
   if (!ssid) return toast('Укажите имя сети', 'warn');
   const what = netMode === 'sta' ? `подключиться к «${ssid}»` : `поднять точку доступа «${ssid}»`;
   if (!await ask('Сменить подключение?', `Устройство перезагрузится и попробует ${what}. Если что-то пойдёт не так, страница станет недоступна по текущему адресу.`, 'Применить', true)) return;
@@ -1343,17 +1521,19 @@ async function saveFile() {
   const name = $('fName').value.trim(), id = +$('fId').value;
   if (!name) return toast('Укажите имя файла', 'warn');
   if (!$('fText').value.trim()) return toast('Скрипт пустой', 'warn');
+  // устройство компилирует синхронно и сохраняет файл только при успехе — ошибка приходит в ответе
   const r = await api('POST', '/api/file', { name, text: $('fText').value, id, continuous: $('fCont').checked });
-  if (!r.ok) return toast('Сохранение: ' + errText(r), 'err');
-  toast('Отправлено на компиляцию…');
+  if (!r.ok) return toast('Не сохранено: ' + errText(r), 'err');
   fxCurrent = name;
   $('fxTitle').textContent = name;
   $('fxDel').hidden = false;
   await loadFiles();
-  await sleep(1500);   // компиляция асинхронная — список режимов проверяем чуть позже
-  await loadLed();
-  const ok = modes.some(m => m.id_mode === id);
-  toast(ok ? `Эффект доступен как режим #${id}` : `Режим #${id} не появился — смотрите лог ESP`, ok ? 'ok' : 'warn');
+  if (r.data && r.data.registered === false) {
+    toast('Сохранено. Эффект обновится после перезагрузки — сейчас работает прежняя версия', 'warn');
+  } else {
+    await loadLed();
+    toast(`Эффект доступен как режим #${id}`);
+  }
   fxStatus();
 }
 $('fId').addEventListener('input', fxStatus);
@@ -1371,14 +1551,14 @@ $('fText').addEventListener('keydown', e => {
 const AUTO = {
   button: {
     title: 'Кнопка', icon: '🔘',
-    defaults: { is_active: true, priority: 100, action: { hold: 180,
-      led: { mode: 254, speed: 128, brightness: 100, color: { r: 255, g: 255, b: 255 } } } }
+    defaults: { is_active: true, priority: 100, action: { hold: 180, repeat: 'extend',
+      led: { mode: 254, speed: 50, brightness: 100, color: { r: 255, g: 255, b: 255 } } } }
   },
   light_sensor: {
     title: 'Датчик света', icon: '🌙',
     defaults: { is_active: true, priority: 20, action: { dark: 300, light: 800,
       time: { start: { hour: 18, minute: 0 }, end: { hour: 8, minute: 0 } },
-      led: { mode: 254, speed: 128, brightness: 80, color: { r: 255, g: 180, b: 80 } } } }
+      led: { mode: 254, speed: 50, brightness: 80, color: { r: 255, g: 180, b: 80 } } } }
   },
   schedule: {
     title: 'Расписание', icon: '⏰',
@@ -1386,9 +1566,13 @@ const AUTO = {
   }
 };
 const ADC_MAX = 4095;
-const HOLD_PRESETS = [10, 30, 60, 180, 300, 600, 1800];
+const HOLD_PRESETS = [10, 30, 60, 180, 300, 600, 1800, 0];   // 0 — до повторного нажатия
 const DAY_NAMES = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
 const DAY_SHORT = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];                  // пн..вс
+const dayRank = d => (d + 6) % 7;                            // пн = 0 … вс = 6
+// сортируем сам массив: индексы в разметке (data-iv-d, data-rm-day) — позиции в нём
+const sortDays = days => days.sort((a, b) => dayRank(a.day) - dayRank(b.day));
 const MAX_DAYS = 7;
 const MAX_INTERVALS = 5;
 const DEFAULT_IV = {
@@ -1408,6 +1592,7 @@ const hm = t => t ? pad2(t.hour || 0) + ':' + pad2(t.minute || 0) : '';
 const tmin = t => (t.hour || 0) * 60 + (t.minute || 0);
 
 function human(s) {
+  if (s === 0) return 'до повторного нажатия';
   if (s < 60) return s + ' с';
   if (s < 3600) return Math.floor(s / 60) + ' мин' + (s % 60 ? ' ' + s % 60 + ' с' : '');
   return Math.floor(s / 3600) + ' ч' + (s % 3600 >= 60 ? ' ' + Math.floor(s % 3600 / 60) + ' мин' : '');
@@ -1432,6 +1617,12 @@ function autoStatus(k) {
   else if (lastState[k] && lastState[k].applied) { txt = 'применена'; cls += ' acc'; }
   else txt = 'ожидает';
   if (k === 'light_sensor' && lastState.light_sensor) txt += lastState.light_sensor.is_dark ? ' · темно' : ' · светло';
+  // сколько ещё держит кнопка (данные state — на момент опроса)
+  const b = k === 'button' && lastState.button;
+  if (b && b.holding && b.remaining_sec != null) {
+    const r = b.remaining_sec;
+    txt += r < 0 ? ' · до нажатия' : r >= 60 ? ` · ещё ~${Math.round(r / 60)} мин` : ` · ещё ${r} с`;
+  }
   return { txt, cls };
 }
 
@@ -1442,6 +1633,7 @@ function normalize(k) {
   if (k === 'schedule') {
     c.priority = c.priority ?? d.priority;
     c.days = Array.isArray(c.days) ? c.days : [];
+    sortDays(c.days);
     c.days.forEach(day => {
       if (typeof day.day !== 'number' || day.day < 0 || day.day > 6) return;
       day.intervals = Array.isArray(day.intervals) ? day.intervals : [];
@@ -1493,9 +1685,13 @@ function cardHtml(k) {
   if (k === 'button') {
     specific = `<div class="grp">
       <div class="grp-t">Держать после нажатия <span class="big" data-show="button.action.hold"></span></div>
-      <div class="chips">${HOLD_PRESETS.map(s => `<button class="chip" data-hold="${s}">${human(s)}</button>`).join('')}</div>
-      <label class="f"><span>Секунд</span><input type="number" min="1" data-k="button.action.hold"></label>
-      <div class="muted small">Повторное нажатие продлевает время.</div></div>`;
+      <div class="chips">${HOLD_PRESETS.map(s => `<button class="chip" data-hold="${s}">${s ? human(s) : '∞ до нажатия'}</button>`).join('')}</div>
+      <label class="f"><span>Секунд</span><input type="number" min="0" data-k="button.action.hold"></label>
+      <div class="muted small">0 — держать, пока кнопку не нажмут ещё раз.</div></div>
+    <div class="grp">
+      <div class="grp-t">Повторное нажатие
+        <div class="seg"><button data-repeat="extend">Продлить</button><button data-repeat="release">Отпустить</button></div></div>
+      <div class="muted small" data-rhint></div></div>`;
   } else if (k === 'light_sensor') {
     specific = `<div class="grp">
       <div class="grp-t">Пороги освещённости <span class="muted">АЦП 0…${ADC_MAX}</span></div>
@@ -1544,9 +1740,9 @@ function cardHtml(k) {
 function scheduleCardHtml() {
   const s = cfg.schedule || { days: [] };
   const days = s.days || [];
-  const dayToggles = DAY_SHORT.map((n, i) => {
+  const dayToggles = WEEK_ORDER.map(i => {
     const inSched = days.some(x => x.day === i);
-    return `<button class="btn sm day-toggle ${inSched ? 'sel' : ''}" data-day-toggle="${i}">${n}</button>`;
+    return `<button class="btn sm day-toggle ${inSched ? 'sel' : ''}" data-day-toggle="${i}">${DAY_SHORT[i]}</button>`;
   }).join('');
   const daysHtml = days.length === 0
     ? '<div class="muted small" style="padding:10px 0">Нет дней — кликни по кнопке выше или «Загрузить пример».</div>'
@@ -1573,15 +1769,14 @@ function renderDayToggles() {
   const wrap = document.querySelector('[data-day-toggles]');
   if (!wrap || !cfg.schedule) return;
   const days = cfg.schedule.days || [];
-  wrap.innerHTML = DAY_SHORT.map((n, i) => {
+  wrap.innerHTML = WEEK_ORDER.map(i => {
     const inSched = days.some(x => x.day === i);
-    return `<button class="btn sm day-toggle ${inSched ? 'sel' : ''}" data-day-toggle="${i}">${n}</button>`;
+    return `<button class="btn sm day-toggle ${inSched ? 'sel' : ''}" data-day-toggle="${i}">${DAY_SHORT[i]}</button>`;
   }).join('');
 }
 
 function renderScheduleDays() {
   const list = document.querySelector('[data-days-list]');
-  console.log('[WebLed] renderScheduleDays: list=' + (list ? 'found' : 'NULL') + ', cfg.schedule=' + (cfg.schedule ? 'set' : 'NULL') + ', days=' + (cfg.schedule ? JSON.stringify(cfg.schedule.days || []) : 'n/a'));
   if (!list || !cfg.schedule) return;
   const days = cfg.schedule.days || [];
   list.innerHTML = days.length === 0
@@ -1610,15 +1805,20 @@ function dayRowHtml(di, day) {
 function ivRowHtml(di, ii, iv) {
   const led = iv.led || { mode: 254, speed: 100, brightness: 80, color: { r: 255, g: 180, b: 80 } };
   const color = led.color || { r: 255, g: 180, b: 80 };
+  const attrs = f => `data-iv-d="${di}" data-iv-i="${ii}" data-iv-field="${f}"`;
   return `<div class="iv-row" data-iv-row="${di}-${ii}">
-    <input type="time" data-iv-d="${di}" data-iv-i="${ii}" data-iv-field="start" value="${hm(iv.start)}" title="начало">
-    <span class="muted">—</span>
-    <input type="time" data-iv-d="${di}" data-iv-i="${ii}" data-iv-field="stop" value="${hm(iv.stop)}" title="конец">
-    <select data-iv-d="${di}" data-iv-i="${ii}" data-iv-field="led.mode" title="режим">${modeOptions(led.mode)}</select>
-    <input type="range" min="0" max="100" data-iv-d="${di}" data-iv-i="${ii}" data-iv-field="led.brightness" value="${led.brightness}" title="яркость ${led.brightness}">
-    <input type="range" min="0" max="100" data-iv-d="${di}" data-iv-i="${ii}" data-iv-field="led.speed" value="${led.speed}" title="скорость ${led.speed}">
-    <input type="color" data-iv-d="${di}" data-iv-i="${ii}" data-iv-field="led.color" value="${hex(color.r, color.g, color.b)}" title="цвет" style="width:36px;height:30px">
-    <button class="btn sm ghost" data-rm-iv="${di}-${ii}" title="удалить интервал">✕</button>
+    <div class="iv-line">
+      <input type="time" ${attrs('start')} value="${hm(iv.start)}" title="начало">
+      <span class="muted">—</span>
+      <input type="time" ${attrs('stop')} value="${hm(iv.stop)}" title="конец">
+      <button class="btn sm ghost" data-rm-iv="${di}-${ii}" title="удалить интервал">✕</button>
+    </div>
+    <select ${attrs('led.mode')} title="режим">${modeOptions(led.mode)}</select>
+    <div class="iv-line">
+      <label class="iv-sl"><span>Ярк.</span><input type="range" min="0" max="100" ${attrs('led.brightness')} value="${led.brightness}"><b class="val">${led.brightness}</b></label>
+      <label class="iv-sl"><span>Скор.</span><input type="range" min="0" max="100" ${attrs('led.speed')} value="${led.speed}"><b class="val">${led.speed}</b></label>
+      <input type="color" ${attrs('led.color')} value="${hex(color.r, color.g, color.b)}" title="цвет" style="width:36px;height:30px">
+    </div>
   </div>`;
 }
 
@@ -1631,10 +1831,6 @@ function renderAuto() {
   try { renderDayToggles(); } catch (e) { console.error('renderDayToggles failed:', e); }
   try { renderScheduleDays(); } catch (e) { console.error('renderScheduleDays failed:', e); }
   try { updateAuto(); } catch (e) { console.error('updateAuto failed:', e); }
-}
-
-// превью ленты для расписания
-function scheduleSwatch() {        // оставлено для совместимости, но больше не используется
 }
 
 function fmtShow(path, v) {
@@ -1672,7 +1868,7 @@ function updateAuto() {
     if (k === 'schedule') {
       // структуру не пересоздаём — иначе фокус в полях времени/цвета теряется;
       // renderScheduleDays() вызывается только при add/remove день/интервал
-      const list = $('[data-days-list]');
+      const list = document.querySelector('[data-days-list]');
       if (list) paintAll(list);
       return;
     }
@@ -1697,7 +1893,17 @@ function updateAuto() {
     applyPreview(card.querySelector('[data-swatch]'), led.mode, led.color, led.brightness, led.speed);
     card.querySelector('[data-mname]').textContent = modeName(led.mode);
 
-    if (k === 'button') card.querySelectorAll('[data-hold]').forEach(ch => ch.classList.toggle('sel', +ch.dataset.hold === a.hold));
+    if (k === 'button') {
+      card.querySelectorAll('[data-hold]').forEach(ch => ch.classList.toggle('sel', +ch.dataset.hold === a.hold));
+      const rep = a.repeat === 'release' ? 'release' : 'extend';
+      card.querySelectorAll('[data-repeat]').forEach(b => {
+        b.classList.toggle('active', b.dataset.repeat === rep);
+        b.disabled = a.hold === 0 && b.dataset.repeat === 'extend';   // без таймера «продлить» = никогда не погаснет
+      });
+      card.querySelector('[data-rhint]').textContent = rep === 'release'
+        ? 'Нажатие во время работы отпускает ленту: возвращается то, что было до кнопки (режим, цвет, яркость). Повтор в первые полсекунды игнорируется (защита от двойного клика).'
+        : 'Нажатие во время работы запускает отсчёт времени заново.';
+    }
 
     if (k === 'light_sensor') {
       const dark = a.dark, light = a.light, lessDark = dark < light;
@@ -1795,6 +2001,8 @@ $('autoSec').addEventListener('input', e => {
         const v = inputValue(el);
         if (v === null) return;
         setPath(iv, d.ivField, v);
+        const shown = el.closest('.iv-sl') && el.closest('.iv-sl').querySelector('.val');
+        if (shown) shown.textContent = el.value;
       }
     } else if (d.active) {
       if (cfg[d.active]) cfg[d.active].is_active = el.checked;
@@ -1812,14 +2020,18 @@ $('autoSec').addEventListener('click', async e => {
   const d = b.dataset;
   if (d.add) { cfg[d.add] = clone(AUTO[d.add].defaults); renderAuto(); }
   else if (d.remove) { delete cfg[d.remove]; renderAuto(); }
-  else if (d.hold) { cfg.button.action.hold = +d.hold; updateAuto(); }
+  else if (d.hold != null) {
+    cfg.button.action.hold = +d.hold;
+    if (+d.hold === 0) cfg.button.action.repeat = 'release';
+    updateAuto();
+  }
+  else if (d.repeat) { cfg.button.action.repeat = d.repeat; updateAuto(); }
   else if (d.lcur) {
     const cur = lastState && lastState.light_sensor ? lastState.light_sensor.value : -1;
     if (cur < 0) return toast('Нет текущего значения датчика', 'warn');
     cfg.light_sensor.action[d.lcur] = cur;
     updateAuto();
   } else if (d.dayToggle != null) {
-    console.log('[WebLed] dayToggle click, wday=' + d.dayToggle + ', cfg.schedule.days before:', JSON.stringify(cfg.schedule && cfg.schedule.days));
     if (!cfg.schedule) return;
     const wday = +d.dayToggle;
     cfg.schedule.days = cfg.schedule.days || [];
@@ -1829,6 +2041,7 @@ $('autoSec').addEventListener('click', async e => {
     } else {
       if (cfg.schedule.days.length >= MAX_DAYS) return toast('Максимум ' + MAX_DAYS + ' дней', 'warn');
       cfg.schedule.days.push({ day: wday, intervals: [clone(DEFAULT_IV)] });
+      sortDays(cfg.schedule.days);
     }
     try { renderDayToggles(); } catch (e) { console.error('renderDayToggles:', e); }
     try { renderScheduleDays(); } catch (e) { console.error('renderScheduleDays:', e); }
@@ -1911,6 +2124,16 @@ function validateConfig() {
         }
         const intervals = day.intervals || [];
         if (intervals.length > MAX_INTERVALS) errs.push(`${T}: ${DAY_NAMES[day.day]} — максимум ${MAX_INTERVALS} интервалов`);
+        // прошивка молча выкидывает start == stop, а при пересечении светит первый найденный интервал
+        const spans = [];
+        intervals.forEach((iv, ii) => {
+          const s = tmin(iv.start || {}), e = tmin(iv.stop || {});
+          if (s === e) { errs.push(`${T}: ${DAY_NAMES[day.day]} интервал ${ii + 1} — начало совпадает с концом`); return; }
+          const end = s < e ? e : 1440;   // хвост после полуночи относится к следующему дню
+          const hit = spans.find(x => s < x.end && x.s < end);
+          if (hit) errs.push(`${T}: ${DAY_NAMES[day.day]} — интервалы ${hit.ii + 1} и ${ii + 1} пересекаются`);
+          spans.push({ s, end, ii });
+        });
         intervals.forEach((iv, ii) => {
           const led = iv.led || {};
           if (led.brightness != null && (led.brightness < 0 || led.brightness > 100)) errs.push(`${T}: ${DAY_NAMES[day.day]} интервал ${ii + 1} — яркость 0…100`);
@@ -1924,7 +2147,8 @@ function validateConfig() {
       if (f === 'mode') { if (!(led.mode >= 0)) errs.push(`${T}: ${f} должен быть числом`); return; }
       if (led[f] < 0 || led[f] > 100) errs.push(`${T}: ${f} 0…100`);
     });
-    if (k === 'button' && !(c.action.hold > 0)) errs.push(`${T}: время удержания > 0`);
+    if (k === 'button' && !(c.action.hold >= 0)) errs.push(`${T}: время удержания — 0 или больше`);
+    if (k === 'button' && c.action.hold === 0 && c.action.repeat !== 'release') errs.push(`${T}: «до повторного нажатия» работает только с повтором «Отпустить»`);
     if (k === 'light_sensor' && c.action.dark === c.action.light) errs.push(`${T}: пороги «темно» и «светло» совпадают`);
   });
   return errs;
@@ -1944,6 +2168,9 @@ async function saveConfig() {
       days: cfg.schedule.days || []
     };
   }
+  // лимит тела запроса на устройстве — 8 КБ (getjson в helper_server.cpp)
+  const size = new Blob([JSON.stringify(body)]).size;
+  if (size >= 8192) return toast(`Конфиг слишком большой: ${size} байт из 8192. Уберите часть интервалов.`, 'err');
   const r = await api('POST', '/api/device', body);
   if (r.ok) waitReboot();
   else toast('Автоматика: ' + errText(r), 'err');
@@ -1954,7 +2181,7 @@ window.addEventListener('beforeunload', e => {
 });
 
 // ---------- роутинг ----------
-const PAGES = ['home', 'led', 'auto', 'fx', 'net', 'sys'];
+const PAGES = ['home', 'led', 'auto', 'fx', 'net', 'sys', 'api'];
 function route() {
   const h = location.hash.replace(/^#\/?/, '');
   const page = PAGES.includes(h) ? h : 'home';
@@ -1967,13 +2194,11 @@ function route() {
 }
 window.addEventListener('hashchange', route);
 
-// ESP держит мало сокетов — стартовые запросы идут по очереди
 async function boot() {
+  // сначала лента — от неё зависит отрисовка остального; дальше параллельно: сервер ESP
+  // обрабатывает запросы по одному, но сетевые задержки перекрываются (сокетов у сервера 7)
   await loadLed();
-  await loadState();
-  await loadInfo();
-  await loadConfig();
-  await loadNet();
+  await Promise.all([loadState(), loadInfo(), loadConfig(), loadNet()]);
   booted = true;
   files = null;
   route();

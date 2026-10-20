@@ -1,14 +1,62 @@
 #include "wifimanager.h"
 #include "esp_system.h"
+#include "DeviceManager.h"
+#include "mdns.h"
+#include <cctype>
 
-static std::string getHostname() {
+static const char *NAME_BASE = "webled";
+
+static std::string mac_suffix() {
   uint8_t mac[6];
   esp_read_mac(mac, ESP_MAC_WIFI_STA);
 
   char macStr[7];
   sprintf(macStr, "%02X%02X%02X", mac[3], mac[4], mac[5]);
+  return macStr;
+}
 
-  return "espled" + std::string(macStr);
+static std::string getHostname() {
+  return std::string(NAME_BASE) + mac_suffix();
+}
+
+static std::string serial_suffix() {
+  char serial[DEVICE_META_SERIAL_MAX_LEN + 1];
+  if (!device_meta_read_serial(serial, sizeof(serial))) return "";
+
+  std::string suffix;
+  for (const char *p = serial; *p; p++) {
+    if (isdigit((unsigned char)*p)) suffix += *p;
+  }
+  if (suffix.empty()) {
+    for (const char *p = serial; *p; p++) {
+      if (isalnum((unsigned char)*p)) suffix += (char)tolower((unsigned char)*p);
+    }
+  }
+  return suffix;
+}
+
+static std::string default_mdns_name() {
+  std::string name = std::string(NAME_BASE) + serial_suffix();
+  if (name.size() > 15) name.erase(15);  
+  return name;
+}
+
+static std::string default_ap_name() {
+  std::string suffix = serial_suffix();
+  return suffix.empty() ? getHostname() : std::string(NAME_BASE) + suffix;
+}
+
+static bool valid_mdns_name(const std::string &name) {
+  if (name.empty() || name.size() > 15) return false;
+  for (char c : name) {
+    if (!isalnum((unsigned char)c) && c != '-' && c != '_') return false;
+  }
+  return true;
+}
+
+static void disable_power_save() {
+  esp_err_t err = esp_wifi_set_ps(WIFI_PS_NONE);
+  if (err != ESP_OK) ESP_LOGW("wifimanager", "esp_wifi_set_ps: %s", esp_err_to_name(err));
 }
 
 static std::string getmode(wifi_mode_t _mode) {
@@ -34,31 +82,36 @@ wifimanager::wifimanager() : settings(STORAGE_WIFI, false) {
   uint8_t init_flag = settings.get<uint8_t>(KEY_INIT, 0);
 
   if (init_flag == 0) {
-    std::string hostname = getHostname();
-
     settings.set(KEY_WIFI_MODE, (uint8_t)WIFI_MODE_AP);
-    //settings.set(KEY_NAME_MDNS, hostname);
-    settings.set(KEY_NAME_MDNS, "webled");
+    settings.set(KEY_NAME_MDNS, default_mdns_name());
     settings.set(KEY_SSID, "12345678");
     settings.set(KEY_SSID_PASSWORD, "12345678");
-    settings.set(KEY_AP, hostname);
+    settings.set(KEY_AP, default_ap_name());
     settings.set(KEY_AP_PASSWORD, "12345678");
     settings.set(KEY_INIT, (uint8_t)1, true);
-
-  } else {
-    mode = (wifi_mode_t)settings.get<uint8_t>(KEY_WIFI_MODE, (uint8_t)WIFI_MODE_AP);
-
-    mdns = settings.get(KEY_NAME_MDNS, getHostname());
-
-    ssid_name = settings.get(KEY_SSID, "12345678");
-    ssid_pswd = settings.get(KEY_SSID_PASSWORD, "12345678");
-
-    ap_name = settings.get(KEY_AP, getHostname());
-    ap_pswd = settings.get(KEY_AP_PASSWORD, "12345678");
-
-    ESP_LOGI(TAG, "Загружено из памяти: сеть:%s, имя по mDNS:%s, ssid:%s, имя точки доступа:%s", 
-      getmode(mode).c_str(), mdns.c_str(), ssid_name.c_str(), ap_name.c_str());
   }
+
+  mode = (wifi_mode_t)settings.get<uint8_t>(KEY_WIFI_MODE, (uint8_t)WIFI_MODE_AP);
+
+  mdns = settings.get(KEY_NAME_MDNS, default_mdns_name());
+  if (mdns == NAME_BASE && default_mdns_name() != NAME_BASE) {
+    mdns = default_mdns_name();
+    settings.set(KEY_NAME_MDNS, mdns, true);
+  }
+
+  ssid_name = settings.get(KEY_SSID, "12345678");
+  ssid_pswd = settings.get(KEY_SSID_PASSWORD, "12345678");
+
+  ap_name = settings.get(KEY_AP, default_ap_name());
+
+  if (ap_name == getHostname() && ap_name != default_ap_name()) {
+    ap_name = default_ap_name();
+    settings.set(KEY_AP, ap_name, true);
+  }
+  ap_pswd = settings.get(KEY_AP_PASSWORD, "12345678");
+
+  ESP_LOGI(TAG, "Загружено из памяти: сеть:%s, имя по mDNS:%s, ssid:%s, имя точки доступа:%s",
+    getmode(mode).c_str(), mdns.c_str(), ssid_name.c_str(), ap_name.c_str());
 }
 
 wifimanager::~wifimanager() {
@@ -190,6 +243,12 @@ std::vector<wifi_ap_record_t> wifimanager::scan_wifi_networks() {
   return ap_records;
 }
 
+bool wifimanager::start_ap() {
+  ESP_LOGW(TAG, "Запасная точка доступа: %s", ap_name.c_str());
+  mode = WIFI_MODE_AP;
+  return wifi_init_ap();
+}
+
 bool wifimanager::wifi_init_ap(void) {
   ESP_LOGI(TAG, "wifi_init_ap: Starting AP initialization");
 
@@ -270,6 +329,7 @@ bool wifimanager::wifi_init_ap(void) {
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
   ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
   ESP_ERROR_CHECK(esp_wifi_start());
+  disable_power_save(); 
 
   return true;
 }
@@ -343,6 +403,7 @@ bool wifimanager::wifi_init_sta(void) {
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
   ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
   ESP_ERROR_CHECK(esp_wifi_start());
+  disable_power_save();
 
   ESP_LOGI(TAG, "WiFi STA started, connecting to SSID: %s", wifi_config.sta.ssid);
   
@@ -360,6 +421,16 @@ bool wifimanager::init(void)
   return false;
 }
 
+std::string wifimanager::get_ip(bool ap) {
+  esp_netif_t *netif = ap ? ap_netif : sta_netif;
+  esp_netif_ip_info_t info = {};
+  if (!netif || esp_netif_get_ip_info(netif, &info) != ESP_OK || info.ip.addr == 0) return "";
+
+  char buf[16];
+  snprintf(buf, sizeof(buf), IPSTR, IP2STR(&info.ip));
+  return buf;
+}
+
 bool wifimanager::get_info_sta(std::string& ssid, std::string& password) {
   if (mutex && xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
     ssid = ssid_name;
@@ -375,10 +446,12 @@ bool wifimanager::set_sta(const std::string& ssid, const std::string& password, 
     ssid_name = ssid;
     ssid_pswd = password;
     mode = WIFI_MODE_STA;
-    
-    settings.set(KEY_SSID, ssid);
-    settings.set(KEY_SSID_PASSWORD, password);
-    settings.set(KEY_WIFI_MODE, (uint8_t)WIFI_MODE_STA, need_save);
+
+    if (need_save) {
+      settings.set(KEY_SSID, ssid);
+      settings.set(KEY_SSID_PASSWORD, password);
+      settings.set(KEY_WIFI_MODE, (uint8_t)WIFI_MODE_STA, true);
+    }
 
     xSemaphoreGive(mutex);
     ESP_LOGI(TAG, "Установка параметров подключения %s", ssid.c_str());
@@ -405,9 +478,11 @@ bool wifimanager::set_ap(const std::string& ap, const std::string& password, boo
 
     ESP_LOGI(TAG, "set_ap: Setting AP mode to WIFI_MODE_AP, AP name: %s", ap.c_str());
     
-    settings.set(KEY_AP, ap);
-    settings.set(KEY_AP_PASSWORD, password);
-    settings.set(KEY_WIFI_MODE, (uint8_t)WIFI_MODE_AP, need_save);
+    if (need_save) {
+      settings.set(KEY_AP, ap);
+      settings.set(KEY_AP_PASSWORD, password);
+      settings.set(KEY_WIFI_MODE, (uint8_t)WIFI_MODE_AP, true);
+    }
 
     xSemaphoreGive(mutex);
     ESP_LOGI(TAG, "set_ap: AP name set to %s", ap_name.c_str());
@@ -519,6 +594,11 @@ static esp_err_t api_network_handler_get(httpd_req_t *req) {
 
     cJSON_AddStringToObject(root, "mdns", wifi->get_mdns_name().c_str());
 
+    // адрес, по которому устройство сейчас доступно: в сети роутера, иначе своей точки доступа
+    std::string ip = wifi->get_ip(false);
+    if (ip.empty()) ip = wifi->get_ip(true);
+    cJSON_AddStringToObject(root, "ip", ip.c_str());
+
     wifi_mode_t mode = wifi->get_mode();
     std::string mode_str = "Null";
     if(mode == WIFI_MODE_STA) mode_str = "STA";
@@ -586,17 +666,27 @@ static esp_err_t api_network_handler_post(httpd_req_t *req) {
       if (name.size() > 6 && name.substr(name.size() - 6) == ".local") {
         name = name.substr(0, name.size() - 6);
       }
-      if (name.empty()) {
+      if (!valid_mdns_name(name)) {
         cJSON_Delete(root);
-        return send_json_status(req, "status", false, "error", "mdns empty");
+        return send_json_status(req, "status", false, "error", "mdns: 1..15 chars, a-z 0-9 - _");
       }
       if (!wifi->set_mdns(name, true)) {
         cJSON_Delete(root);
-        return send_json_status(req, "status", false, "error", "mdns too long (max 15)");
+        return send_json_status(req, "status", false, "error", "mdns save failed");
       }
+      // имя применяем сразу, без перезагрузки
+      mdns_hostname_set(name.c_str());
+      mdns_instance_name_set(name.c_str());
+      ESP_LOGI("wifimanager", "mDNS: новое имя %s.local", name.c_str());
     }
 
     cJSON *mode = cJSON_GetObjectItem(root, "mode");
+
+    // пришло только имя — это не ошибка, режим Wi-Fi не трогаем
+    if (!mode && mdns) {
+      cJSON_Delete(root);
+      return send_json_status(req, "status", true, "success", "mdns set");
+    }
 
     if(mode) {
       if(cJSON_IsString(mode)) {

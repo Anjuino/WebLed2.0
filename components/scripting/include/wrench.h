@@ -114,7 +114,7 @@ With this defined the VM will enforce a maximum number of instructions
 before a yield is forced, to prevent infinite loops, this adds a small check to each
 instruction!
 */
-//#define WRENCH_TIME_SLICES
+#define WRENCH_TIME_SLICES
 
 #ifdef WRENCH_TIME_SLICES
 // how many instructions each call to the VM executes before yielding,

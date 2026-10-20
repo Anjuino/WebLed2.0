@@ -13,4 +13,15 @@ else()
 endif()
 
 target_add_binary_data(${COMPONENT_LIB} "cert/remote_ca.crt" EMBED_TXTFILES)
-target_add_binary_data(${COMPONENT_LIB} "web/index.html" TEXT)
+# Веб-страница встраивается сжатой gzip (~117 КБ -> ~32 КБ) и отдаётся с Content-Encoding: gzip.
+# .gz собирается сам при каждой сборке, если поменялся index.html — руками ничего делать не нужно
+idf_build_get_property(python PYTHON)
+set(WEB_PAGE_SRC "${CMAKE_CURRENT_SOURCE_DIR}/web/index.html")
+set(WEB_PAGE_GZ  "${CMAKE_CURRENT_BINARY_DIR}/index.html.gz")
+add_custom_command(
+    OUTPUT "${WEB_PAGE_GZ}"
+    COMMAND ${python} "${CMAKE_CURRENT_SOURCE_DIR}/web/gzip_page.py" "${WEB_PAGE_SRC}" "${WEB_PAGE_GZ}"
+    DEPENDS "${WEB_PAGE_SRC}" "${CMAKE_CURRENT_SOURCE_DIR}/web/gzip_page.py"
+    COMMENT "Compressing web page (gzip)"
+    VERBATIM)
+target_add_binary_data(${COMPONENT_LIB} "${WEB_PAGE_GZ}" BINARY DEPENDS "${WEB_PAGE_GZ}")

@@ -29,19 +29,34 @@ void check_app()
                           (state == ESP_OTA_IMG_INVALID) ? "INVALID" : "UNDEFINED";
 
   esp_reset_reason_t rst = esp_reset_reason();
-  bool was_rollback = (state == ESP_OTA_IMG_VALID) &&
-                      (rst == ESP_RST_PANIC || rst == ESP_RST_TASK_WDT ||
-                       rst == ESP_RST_INT_WDT || rst == ESP_RST_BROWNOUT);
+  bool was_crash = (rst == ESP_RST_PANIC || rst == ESP_RST_TASK_WDT ||
+                    rst == ESP_RST_INT_WDT || rst == ESP_RST_BROWNOUT);
 
-  if (was_rollback) {
-    ESP_LOGE("BOOT", "rollback to %s, version %s", running->label, firmware_version());
+  NVSProxy boot_nvs("boot", false);
+  std::string last = boot_nvs.get("last_partition", "");
+
+  if (last.empty()) {
+    ESP_LOGI("BOOT", "running=%s, state=%s, rst=%d, version %s (first boot)",
+             running->label, state_str, rst, firmware_version());
+    boot_nvs.set("last_partition", running->label, true);
+  } else if (last != running->label) {
+    if (was_crash) {
+      ESP_LOGE("BOOT", ">>> ROLLBACK: %s -> %s, rst=%d, version %s <<<",
+               last.c_str(), running->label, rst, firmware_version());
+    } else {
+      ESP_LOGW("BOOT", "switched: %s -> %s (OTA update), version %s",
+               last.c_str(), running->label, firmware_version());
+    }
+    boot_nvs.set("last_partition", running->label, true);
   } else {
-    ESP_LOGI("BOOT", "running=%s, state=%s, version %s", running->label, state_str, firmware_version());
+    ESP_LOGI("BOOT", "running=%s, state=%s, rst=%d, version %s",
+             running->label, state_str, rst, firmware_version());
   }
 }
 
 extern "C" void app_main ()
 {
+  NVSProxy::nvs_init();
   check_app();
 
   char serial[32];
@@ -53,17 +68,15 @@ extern "C" void app_main ()
     ESP_LOGW(TAG, "device: not provisioned");
   }
 
-  NVSProxy::nvs_init();
   wifi = new wifimanager();
   wifi->init();
 
-  uint64_t timer = (esp_timer_get_time() / 1000) + 10000;
+  uint64_t timer = (esp_timer_get_time() / 1000) + 30000;
   while(!wifi->ready()) {
     vTaskDelay(pdMS_TO_TICKS(1000));
     ESP_LOGI(TAG, "wifi init...");
     if(timer < (esp_timer_get_time() / 1000)) {
-      wifi->set_ap("Equalizer", "12345678", false);
-      wifi->init();
+      wifi->start_ap();
       break;
     }
   }
@@ -75,7 +88,7 @@ extern "C" void app_main ()
     return;
   }
 
-  vTaskDelay(pdMS_TO_TICKS(60 * 1000));
-  esp_ota_mark_app_valid_cancel_rollback();
+  esp_err_t mark = esp_ota_mark_app_valid_cancel_rollback();
+  if (mark != ESP_OK) ESP_LOGW(TAG, "mark app valid: %s", esp_err_to_name(mark));
   vTaskDelete(NULL);
 }

@@ -52,7 +52,7 @@ esp_err_t getjson(httpd_req_t *req, char **output) {
     httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Empty body");
     return ESP_FAIL;
   }
-  if(content_len >= 4096) {
+  if(content_len >= 8192) {
     httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Body too large");
     return ESP_FAIL;
   }
