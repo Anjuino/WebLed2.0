@@ -4,6 +4,7 @@
 #include "esp_http_server.h"
 #include "esp_event.h"
 #include <string.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
 #include <vector>
@@ -15,6 +16,7 @@
 #include "script_engine.h"
 #include "sntp_time.h"
 #include "mdns.h"
+#include "version.h"
 #include "lwip/sockets.h"
 
 
@@ -27,21 +29,35 @@
 
 static const char *TAG = "Server";
 
-// веб-страница, сжатая gzip при сборке (CMakeLists.txt + web/gzip_page.py).
-// Распаковывает браузер — gzip понимают все, отдаём как есть
 extern const char index_html_gz_start[] asm("_binary_index_html_gz_start");
 extern const char index_html_gz_end[]   asm("_binary_index_html_gz_end");
 
+static const char *index_etag() {
+  static char etag[64];
+  if (!etag[0]) {
+    snprintf(etag, sizeof(etag), "\"%s\"", firmware_version());
+  }
+  return etag;
+}
+
 static esp_err_t index_handler(httpd_req_t *req) {
+  const char *etag = index_etag();
+
+  char inm[64];
+  if (httpd_req_get_hdr_value_str(req, "If-None-Match", inm, sizeof(inm)) == ESP_OK && strcmp(inm, etag) == 0) {
+    httpd_resp_set_status(req, "304 Not Modified");
+    httpd_resp_set_hdr(req, "ETag", etag);
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    return httpd_resp_send(req, nullptr, 0);
+  }
+
   httpd_resp_set_type(req, "text/html; charset=utf-8");
   httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
   httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+  httpd_resp_set_hdr(req, "ETag", etag);
   return httpd_resp_send(req, index_html_gz_start, index_html_gz_end - index_html_gz_start);
 }
 
-// Сервер пишет заголовки и тело ответа отдельными маленькими пакетами. Nagle придерживает второй,
-// пока не придёт ACK на первый, а Windows шлёт ACK с задержкой до 200 мс — отсюда ~300 мс на
-// каждый запрос. TCP_NODELAY отправляет пакеты сразу
 static esp_err_t on_socket_open(httpd_handle_t hd, int sockfd) {
   int one = 1;
   if (setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one)) != 0) {
@@ -113,8 +129,8 @@ esp_err_t server::start() {
   ssl_config.cacert_pem = (const uint8_t *)cert_ca_crt_start;
   ssl_config.cacert_len = ca_len;
 
-  ssl_config.httpd.recv_wait_timeout = 10;
-  ssl_config.httpd.send_wait_timeout = 10;
+  ssl_config.httpd.recv_wait_timeout = 20;
+  ssl_config.httpd.send_wait_timeout = 20;
   ssl_config.transport_mode = HTTPD_SSL_TRANSPORT_SECURE;
   ssl_config.tls_handshake_timeout_ms = 5000;
   ssl_config.session_tickets = true;
@@ -130,17 +146,17 @@ esp_err_t server::start() {
 
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = port;
-  config.recv_wait_timeout = 5;
-  config.send_wait_timeout = 5;
+  config.recv_wait_timeout = 20;
+  config.send_wait_timeout = 20;
   config.task_priority = 10;
   config.max_open_sockets = 7;
   config.stack_size = 10 * 1024;
   config.max_uri_handlers = 24;
   config.lru_purge_enable = true;
   config.keep_alive_enable = true;
-  config.keep_alive_idle = 3;
-  config.keep_alive_interval = 3;   
-  config.keep_alive_count = 2;
+  config.keep_alive_idle = 15;
+  config.keep_alive_interval = 5;
+  config.keep_alive_count = 3;
   config.open_fn = on_socket_open;
 
   esp_err_t err = httpd_start(&m_server, &config);

@@ -54,8 +54,8 @@ static bool valid_mdns_name(const std::string &name) {
   return true;
 }
 
-static void disable_power_save() {
-  esp_err_t err = esp_wifi_set_ps(WIFI_PS_NONE);
+static void apply_power_save() {
+  esp_err_t err = esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
   if (err != ESP_OK) ESP_LOGW("wifimanager", "esp_wifi_set_ps: %s", esp_err_to_name(err));
 }
 
@@ -329,7 +329,7 @@ bool wifimanager::wifi_init_ap(void) {
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
   ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
   ESP_ERROR_CHECK(esp_wifi_start());
-  disable_power_save(); 
+  apply_power_save(); 
 
   return true;
 }
@@ -403,7 +403,7 @@ bool wifimanager::wifi_init_sta(void) {
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
   ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
   ESP_ERROR_CHECK(esp_wifi_start());
-  disable_power_save();
+  apply_power_save();
 
   ESP_LOGI(TAG, "WiFi STA started, connecting to SSID: %s", wifi_config.sta.ssid);
   

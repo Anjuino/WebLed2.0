@@ -73,6 +73,11 @@ Insomnia, Swagger Editor.
 Сжатие делается само при сборке, если `index.html` изменился (`components/server/web/gzip_page.py`,
 правило в `components/server/CMakeLists.txt`). Править нужно только `index.html`.
 
+Кэширование: ответ несёт `ETag` — версию прошивки (`firmware_version()`, например `"1.0.0.61"`) —
+и `Cache-Control: no-cache`. Браузер при каждом заходе присылает `If-None-Match`; если версия та же,
+устройство отвечает пустым `304 Not Modified` вместо ~34 КБ. После перепрошивки версия другая —
+браузер получает страницу заново.
+
 ---
 
 ## `GET /api/led`

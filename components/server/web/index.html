@@ -633,13 +633,8 @@
       <label class="f"><span>Светодиодов</span><input type="number" id="ledCount" min="1"></label>
       <label class="f"><span>Тип ленты</span><select id="ledModel"><option value="ws2812">WS2812 (5 В)</option><option value="ws2815">WS2815 (12 В)</option></select></label>
       <label class="f"><span>Порядок цветов</span><select id="ledPxFmt"><option value="grb">GRB</option><option value="rgb">RGB</option></select></label>
-      <p class="muted small">Если красный горит зелёным (и наоборот) — смените порядок цветов. Лента пересоздаётся сразу, без перезагрузки.</p>
       <div class="swrow"><span><b>Запоминать состояние</b><br><span class="muted small">save_mode — после перезагрузки лента вернётся в последний режим</span></span><span class="sw"><input type="checkbox" id="ledSave"><span></span></span></div>
       <div class="row between mt"><span></span><button class="btn primary" onclick="applySettings()"><i data-ic="check"></i>Сохранить</button></div>
-    </div>
-    <div class="card">
-      <div class="card-h"><h3>Обновление данных</h3><span class="muted small" id="stAt"></span></div>
-      <div class="swrow"><span><b>Опрашивать state</b><br><span class="muted small">каждые 30 секунд, пока вкладка открыта</span></span><span class="sw"><input type="checkbox" id="stAuto" checked><span></span></span></div>
     </div>
     <div class="card danger-zone">
       <div class="card-h"><h3>Обновление прошивки</h3><span class="badge acc" id="otaVer"></span></div>
@@ -695,6 +690,17 @@
     <h3 id="mTitle"></h3>
     <p id="mText"></p>
     <div class="row"><button class="btn ghost" id="mCancel">Отмена</button><button class="btn primary" id="mOk">OK</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="otaOverlay" hidden>
+  <div style="width:min(420px,100%)">
+    <div class="spinner"></div>
+    <h3>Обновление прошивки</h3>
+    <p id="otaOvText">Передача файла на устройство…</p>
+    <div class="bar ota-bar"><i id="otaOvBar" style="width:0"></i></div>
+    <p class="small mt" id="otaOvPct"></p>
+    <p class="small mt">Не закрывайте страницу и не выключайте устройство. Остальные запросы к устройству приостановлены.</p>
   </div>
 </div>
 
@@ -808,7 +814,12 @@ function setOnline(on) {
 
 // ---------- API ----------
 // Все запросы идут через api(): таймаут, разбор JSON/текста, запись в лог
+// пока идёт загрузка прошивки — никаких запросов к ESP: сервер принимает файл и всё равно
+// не ответит, а лишние соединения только отнимают эфир у загрузки
+let otaBusy = false;
+
 async function api(method, url, body, timeoutMs = 10000) {
+  if (otaBusy) return { ok: false, status: 0, data: null, text: 'идёт обновление прошивки' };
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   const opts = { method, signal: ctrl.signal };
@@ -1005,7 +1016,7 @@ function queueState(part, force) {
   pendT = setTimeout(flushState, 200);
 }
 async function flushState() {
-  if (pendBusy || !Object.keys(pend).length) return;
+  if (pendBusy || otaBusy || !Object.keys(pend).length) return;
   const b = { state: pend };
   pend = {};
   pendBusy = true;
@@ -1216,7 +1227,6 @@ async function loadState() {
   lastState = r.data;
   $('stRaw').textContent = JSON.stringify(r.data, null, 2);
   const t = 'обновлено ' + new Date().toLocaleTimeString();
-  $('stAt').textContent = t;
   $('sideUpd').textContent = t;
   renderTiles(); renderHomeAutos(); renderLed();
   if (cfgOrig) updateAuto();
@@ -1231,7 +1241,7 @@ async function loadInfo() {
 }
 
 let stateTimer = setInterval(() => {
-  if (!$('stAuto').checked || document.hidden || !booted) return;
+  if (document.hidden || !booted || otaBusy) return;
   loadState().then(loadInfo);
 }, 30000);
 
@@ -1316,18 +1326,29 @@ function uploadFirmware() {
       $('otaFile').disabled = true;
       $('otaBarWrap').hidden = false;
       $('otaBar').style.width = '0';
+      otaBusy = true;
+      $('otaOvBar').style.width = '0';
+      $('otaOvText').textContent = 'Устройство готовит раздел (стирание флеша, до ~20 с)…';
+      $('otaOvPct').textContent = '';
+      $('otaOverlay').hidden = false;
 
       const xhr = new XMLHttpRequest();
       xhr.open('POST', '/api/ota/local-upload');
       xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-      xhr.timeout = 180000;
+      xhr.timeout = 15 * 60 * 1000;   // на слабом Wi-Fi со сном загрузка может идти минутами
       xhr.upload.onprogress = ev => {
         if (!ev.lengthComputable) return;
         const pct = Math.round(ev.loaded / ev.total * 100);
+        const txt = pct < 100 ? `загрузка ${pct}% · ${fmtBytes(ev.loaded)} из ${fmtBytes(ev.total)}` : 'запись во флеш…';
         $('otaBar').style.width = pct + '%';
-        $('otaStatus').textContent = pct < 100 ? `загрузка ${pct}% · ${fmtBytes(ev.loaded)} из ${fmtBytes(ev.total)}` : 'запись во флеш…';
+        $('otaStatus').textContent = txt;
+        $('otaOvBar').style.width = pct + '%';
+        $('otaOvText').textContent = pct < 100 ? 'Передача файла на устройство…' : 'Запись во флеш и проверка…';
+        $('otaOvPct').textContent = txt;
       };
       const done = (ok, status, text) => {
+        otaBusy = false;
+        $('otaOverlay').hidden = true;
         logEntry('POST', '/api/ota/local-upload', `<${otaFile.name}, ${otaFile.size} байт>`, status, Math.round(performance.now() - t0), text, ok);
         $('otaFile').disabled = false;
         if (ok) {
@@ -2177,6 +2198,7 @@ async function saveConfig() {
 }
 
 window.addEventListener('beforeunload', e => {
+  if (otaBusy) { e.preventDefault(); e.returnValue = ''; return; }
   if (cfgOrig && JSON.stringify(cfg) !== JSON.stringify(cfgOrig)) { e.preventDefault(); e.returnValue = ''; }
 });
 
@@ -2195,10 +2217,13 @@ function route() {
 window.addEventListener('hashchange', route);
 
 async function boot() {
-  // сначала лента — от неё зависит отрисовка остального; дальше параллельно: сервер ESP
-  // обрабатывает запросы по одному, но сетевые задержки перекрываются (сокетов у сервера 7)
+  // строго по очереди: на слабом Wi-Fi со сном параллельные соединения мешают друг другу
+  // и загрузка встаёт целиком (проверено на контроллере с сигналом -71 dBm)
   await loadLed();
-  await Promise.all([loadState(), loadInfo(), loadConfig(), loadNet()]);
+  await loadState();
+  await loadInfo();
+  await loadConfig();
+  await loadNet();
   booted = true;
   files = null;
   route();
