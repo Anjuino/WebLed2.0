@@ -58,7 +58,7 @@ static void rainbow(led *self, void *)
 
   rainbow_offset = (rainbow_offset + 1) % 255;
   self->show();
-  self->wait(110 - self->get_speed());
+  self->wait(frame_ms(self, 110, 10));
 }
 
 static void static_color(led *self, void *)
