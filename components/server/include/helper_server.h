@@ -16,7 +16,7 @@ esp_err_t send_json_status(httpd_req_t *req, const char *bool_key, bool val, con
 bool get_query_param(httpd_req_t *req, const char *key, char *out, size_t out_len);
 
 // Читает тело запроса целиком в новый буфер (malloc, владение переходит
-// вызывающему — освобождать через free()). Ограничение на размер — 4096
+// вызывающему — освобождать через free()). Ограничение на размер — 8192
 // байт. Сама логирует, отправляет клиенту ошибку и возвращает ESP_FAIL
 // при пустом/слишком большом теле или обрыве соединения.
 esp_err_t getjson(httpd_req_t *req, char **output);

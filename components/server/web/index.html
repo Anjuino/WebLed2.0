@@ -232,6 +232,10 @@
   .acard { transition: border-color .3s, box-shadow .3s, opacity .2s; }
   .acard.owner { border-color: rgba(52, 211, 153, .5); box-shadow: 0 0 30px -10px rgba(52, 211, 153, .5); }
   .acard.off { opacity: .55; }
+  .acard.collapsed > :not(.ac-head) { display: none; }
+  .acard.collapsed .ac-head { margin-bottom: 0; }
+  .fold-btn { transition: transform .2s; }
+  .acard.collapsed .fold-btn { transform: rotate(-90deg); }
   .day-row { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; background: var(--surface-2); }
   .day-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
   .day-head b { flex: 1; min-width: 120px; }
@@ -533,6 +537,7 @@
     <div class="autos">
       <div class="card acard" id="ac-button"></div>
       <div class="card acard" id="ac-light_sensor"></div>
+      <div class="card acard" id="ac-motion"></div>
       <div class="card acard" id="ac-schedule"></div>
     </div>
     <div class="savebar" id="saveBar">
@@ -950,7 +955,7 @@ async function loadLed() {
 }
 
 function hasAutomations() {
-  return !!(lastState && (lastState.button || lastState.light_sensor || lastState.schedule)) || !!(cfgOrig && (cfgOrig.button || cfgOrig.light_sensor || cfgOrig.schedule));
+  return !!(lastState && (lastState.button || lastState.light_sensor || lastState.schedule || lastState.motion)) || !!(cfgOrig && (cfgOrig.button || cfgOrig.light_sensor || cfgOrig.schedule || cfgOrig.motion));
 }
 
 let modeGridSig = '';
@@ -1209,6 +1214,7 @@ function renderHomeAutos() {
       const a = c.action || {}, t = a.time;
       when = t ? `${hm(t.start)}–${hm(t.end)}` : 'круглосуточно';
       what = k === 'button' ? `${a.hold ? 'держит ' + human(a.hold) : 'держит до повторного нажатия'}${a.repeat === 'release' ? ', повтор отпускает' : ''}`
+           : k === 'motion' ? `держит ${human(a.hold || 30)}${a.light_sensor ? ', только в темноте' : ''}`
            : `темно ${a.dark < a.light ? '≤' : '≥'} ${a.dark}, светло ${a.dark < a.light ? '≥' : '≤'} ${a.light}`;
       ledInfo2 = a.led;
     }
@@ -1581,6 +1587,11 @@ const AUTO = {
       time: { start: { hour: 18, minute: 0 }, end: { hour: 8, minute: 0 } },
       led: { mode: 254, speed: 50, brightness: 80, color: { r: 255, g: 180, b: 80 } } } }
   },
+  motion: {
+    title: 'Датчик движения', icon: '🚶',
+    defaults: { is_active: true, priority: 15, action: { hold: 30,
+      led: { mode: 254, speed: 50, brightness: 50, color: { r: 255, g: 180, b: 80 } } } }
+  },
   schedule: {
     title: 'Расписание', icon: '⏰',
     defaults: { is_active: true, priority: 15, days: [] }
@@ -1588,6 +1599,7 @@ const AUTO = {
 };
 const ADC_MAX = 4095;
 const HOLD_PRESETS = [10, 30, 60, 180, 300, 600, 1800, 0];   // 0 — до повторного нажатия
+const MOTION_HOLD_PRESETS = [10, 30, 60, 180, 300, 600];
 const DAY_NAMES = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
 const DAY_SHORT = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];                  // пн..вс
@@ -1638,8 +1650,9 @@ function autoStatus(k) {
   else if (lastState[k] && lastState[k].applied) { txt = 'применена'; cls += ' acc'; }
   else txt = 'ожидает';
   if (k === 'light_sensor' && lastState.light_sensor) txt += lastState.light_sensor.is_dark ? ' · темно' : ' · светло';
+  if (k === 'motion' && lastState.motion && lastState.motion.is_dark != null) txt += lastState.motion.is_dark ? ' · темно' : ' · светло';
   // сколько ещё держит кнопка (данные state — на момент опроса)
-  const b = k === 'button' && lastState.button;
+  const b = (k === 'button' || k === 'motion') && lastState[k];
   if (b && b.holding && b.remaining_sec != null) {
     const r = b.remaining_sec;
     txt += r < 0 ? ' · до нажатия' : r >= 60 ? ` · ещё ~${Math.round(r / 60)} мин` : ` · ещё ${r} с`;
@@ -1674,7 +1687,11 @@ function normalize(k) {
   c.action = c.action || {};
   c.action.led = Object.assign({}, d.action.led, c.action.led);
   c.action.led.color = Object.assign({}, d.action.led.color, c.action.led.color);
-  if (k === 'button' && c.action.hold == null) c.action.hold = d.action.hold;
+  if ((k === 'button' || k === 'motion') && c.action.hold == null) c.action.hold = d.action.hold;
+  if (k === 'motion' && c.action.light_sensor) {
+    if (c.action.light_sensor.dark == null) c.action.light_sensor.dark = 300;
+    if (c.action.light_sensor.light == null) c.action.light_sensor.light = 500;
+  }
   if (k === 'light_sensor') {
     if (c.action.dark == null) c.action.dark = d.action.dark;
     if (c.action.light == null) c.action.light = d.action.light;
@@ -1685,7 +1702,7 @@ function cardHtml(k) {
   const A = AUTO[k];
   if (!cfg[k]) {
     return `<div class="ac-empty"><div class="ac-icon">${A.icon}</div><h3>${A.title}</h3>
-      <p class="muted">На устройстве нет конфига для этой автоматики.</p>
+      <p class="muted">${cfgOrig && cfgOrig[k] ? 'Конфиг будет удалён с устройства после сохранения.' : 'На устройстве нет конфига для этой автоматики.'}</p>
       <button class="btn primary" data-add="${k}"><i data-ic="plus"></i>Настроить</button></div>`;
   }
   normalize(k);
@@ -1694,7 +1711,8 @@ function cardHtml(k) {
   const acHead = `<div class="ac-head"><span class="ac-icon">${A.icon}</span><b>${A.title}</b>
       <span class="badge" data-badge="${k}"></span>
       <label class="sw" title="Включён"><input type="checkbox" data-active="${k}" ${active ? 'checked' : ''}><span></span></label>
-      ${cfgOrig && cfgOrig[k] ? '' : `<button class="btn icon ghost" data-remove="${k}" title="Не добавлять">✕</button>`}</div>`;
+      <button class="btn icon ghost" data-remove="${k}" title="${cfgOrig && cfgOrig[k] ? 'Удалить конфиг с устройства (после сохранения)' : 'Не добавлять'}">✕</button>
+      <button class="btn icon ghost fold-btn" data-fold="${k}" title="Свернуть / развернуть">▾</button></div>`;
 
   if (k === 'schedule') {
     return acHead + scheduleCardHtml();
@@ -1713,6 +1731,28 @@ function cardHtml(k) {
       <div class="grp-t">Повторное нажатие
         <div class="seg"><button data-repeat="extend">Продлить</button><button data-repeat="release">Отпустить</button></div></div>
       <div class="muted small" data-rhint></div></div>`;
+  } else if (k === 'motion') {
+    const ls = a.light_sensor;
+    specific = `<div class="grp">
+      <div class="grp-t">Держать после движения <span class="big" data-show="motion.action.hold"></span></div>
+      <div class="chips">${MOTION_HOLD_PRESETS.map(s => `<button class="chip" data-mhold="${s}">${human(s)}</button>`).join('')}</div>
+      <label class="f"><span>Секунд</span><input type="number" min="1" data-k="motion.action.hold"></label>
+      <div class="muted small">Каждое движение запускает отсчёт заново; пока датчик видит человека, лента не гаснет.</div></div>
+    <div class="grp">
+      ${ls ? `<div class="grp-t">Датчик освещения <button class="btn sm ghost" data-mlrm="1">Убрать</button></div>
+        <div class="lscale" data-lscale>
+          <div class="ls-hyst"></div>
+          <div class="ls-mark dark"><span>🌙</span></div>
+          <div class="ls-mark light"><span>☀</span></div>
+          <div class="ls-now" hidden><span></span></div>
+        </div>
+        <label class="f"><span>🌙 Темно</span><input type="range" min="0" max="${ADC_MAX}" data-k="motion.action.light_sensor.dark"><input type="number" class="num" min="0" max="${ADC_MAX}" data-k="motion.action.light_sensor.dark"></label>
+        <label class="f"><span>☀ Светло</span><input type="range" min="0" max="${ADC_MAX}" data-k="motion.action.light_sensor.light"><input type="number" class="num" min="0" max="${ADC_MAX}" data-k="motion.action.light_sensor.light"></label>
+        <div class="muted small" data-mlhint></div>
+        <div class="row mt"><button class="btn sm" data-mcur="dark">Текущее → «темно»</button><button class="btn sm" data-mcur="light">Текущее → «светло»</button></div>`
+      : `<div class="grp-t">Датчик освещения</div>
+        <button class="btn sm" data-mladd="1"><i data-ic="plus"></i>Добавить датчик освещения</button>`}
+    </div>`;
   } else if (k === 'light_sensor') {
     specific = `<div class="grp">
       <div class="grp-t">Пороги освещённости <span class="muted">АЦП 0…${ADC_MAX}</span></div>
@@ -1843,8 +1883,19 @@ function ivRowHtml(di, ii, iv) {
   </div>`;
 }
 
+// какие карточки свёрнуты — помним в браузере; без localStorage всё просто развёрнуто
+let autoFold = {};
+try { autoFold = JSON.parse(localStorage.getItem('webled.autoFold') || '{}') || {}; } catch (e) {}
+
+function toggleFold(k) {
+  autoFold[k] = !autoFold[k];
+  $('ac-' + k).classList.toggle('collapsed', !!autoFold[k]);
+  try { localStorage.setItem('webled.autoFold', JSON.stringify(autoFold)); } catch (e) {}
+}
+
 function renderAuto() {
   Object.keys(AUTO).forEach(k => {
+    $('ac-' + k).classList.toggle('collapsed', !!autoFold[k]);
     try { $('ac-' + k).innerHTML = cardHtml(k); }
     catch (e) { console.error('cardHtml(' + k + ') failed:', e); $('ac-' + k).innerHTML = '<div class="empty">Ошибка рендера: ' + esc(String(e)) + '</div>'; }
   });
@@ -1852,6 +1903,21 @@ function renderAuto() {
   try { renderDayToggles(); } catch (e) { console.error('renderDayToggles failed:', e); }
   try { renderScheduleDays(); } catch (e) { console.error('renderScheduleDays failed:', e); }
   try { updateAuto(); } catch (e) { console.error('updateAuto failed:', e); }
+}
+
+// шкала порогов света: градиент, метки «темно»/«светло», зона гистерезиса и текущее значение
+function paintLightScale(sc, dark, light, cur) {
+  const lessDark = dark < light;
+  const pct = v => Math.max(0, Math.min(100, v / ADC_MAX * 100));
+  sc.style.background = `linear-gradient(90deg, ${lessDark ? '#0d1030, #f5d76e' : '#f5d76e, #0d1030'})`;
+  sc.querySelector('.ls-mark.dark').style.left = pct(dark) + '%';
+  sc.querySelector('.ls-mark.light').style.left = pct(light) + '%';
+  const hy = sc.querySelector('.ls-hyst');
+  hy.style.left = pct(Math.min(dark, light)) + '%';
+  hy.style.width = (pct(Math.max(dark, light)) - pct(Math.min(dark, light))) + '%';
+  const nowEl = sc.querySelector('.ls-now');
+  nowEl.hidden = !(cur >= 0);
+  if (cur >= 0) { nowEl.style.left = pct(cur) + '%'; nowEl.querySelector('span').textContent = 'сейчас ' + cur; }
 }
 
 function fmtShow(path, v) {
@@ -1928,21 +1994,26 @@ function updateAuto() {
 
     if (k === 'light_sensor') {
       const dark = a.dark, light = a.light, lessDark = dark < light;
-      const pct = v => Math.max(0, Math.min(100, v / ADC_MAX * 100));
-      const sc = card.querySelector('[data-lscale]');
-      sc.style.background = `linear-gradient(90deg, ${lessDark ? '#0d1030, #f5d76e' : '#f5d76e, #0d1030'})`;
-      sc.querySelector('.ls-mark.dark').style.left = pct(dark) + '%';
-      sc.querySelector('.ls-mark.light').style.left = pct(light) + '%';
-      const hy = sc.querySelector('.ls-hyst');
-      hy.style.left = pct(Math.min(dark, light)) + '%';
-      hy.style.width = (pct(Math.max(dark, light)) - pct(Math.min(dark, light))) + '%';
-      const nowEl = sc.querySelector('.ls-now');
       const cur = lastState && lastState.light_sensor ? lastState.light_sensor.value : -1;
-      nowEl.hidden = cur < 0;
-      if (cur >= 0) { nowEl.style.left = pct(cur) + '%'; nowEl.querySelector('span').textContent = 'сейчас ' + cur; }
+      paintLightScale(card.querySelector('[data-lscale]'), dark, light, cur);
       card.querySelector('[data-lhint]').textContent = dark === light
         ? '⚠ Пороги совпадают — нет гистерезиса, лента будет дёргаться.'
         : `Темно при ${lessDark ? '≤' : '≥'} ${dark}, светло при ${lessDark ? '≥' : '≤'} ${light}. Между ними — зона гистерезиса, состояние не меняется.`;
+    }
+
+    if (k === 'motion') {
+      card.querySelectorAll('[data-mhold]').forEach(ch => ch.classList.toggle('sel', +ch.dataset.mhold === a.hold));
+      const ls = a.light_sensor;
+      if (ls) {
+        const lessDark = ls.dark < ls.light;
+        const m = lastState && lastState.motion, l = lastState && lastState.light_sensor;
+        const cur = m && m.light != null ? m.light : (l ? l.value : -1);
+        paintLightScale(card.querySelector('[data-lscale]'), ls.dark, ls.light, cur);
+        const seen = m && m.last_light >= 0 ? ` Последнее движение видело ${m.last_light} — ${m.is_dark ? 'темно' : 'светло'}.` : '';
+        card.querySelector('[data-mlhint]').textContent = (ls.dark === ls.light
+          ? '⚠ Пороги совпадают — нет гистерезиса.'
+          : `Темно при ${lessDark ? '≤' : '≥'} ${ls.dark}, светло при ${lessDark ? '≥' : '≤'} ${ls.light}. Решение обновляется в момент движения.`) + seen;
+      }
     }
   });
 
@@ -2039,6 +2110,7 @@ $('autoSec').addEventListener('click', async e => {
   const b = e.target.closest('button');
   if (!b) return;
   const d = b.dataset;
+  if (d.fold) { toggleFold(d.fold); return; }
   if (d.add) { cfg[d.add] = clone(AUTO[d.add].defaults); renderAuto(); }
   else if (d.remove) { delete cfg[d.remove]; renderAuto(); }
   else if (d.hold != null) {
@@ -2047,6 +2119,16 @@ $('autoSec').addEventListener('click', async e => {
     updateAuto();
   }
   else if (d.repeat) { cfg.button.action.repeat = d.repeat; updateAuto(); }
+  else if (d.mhold != null) { cfg.motion.action.hold = +d.mhold; updateAuto(); }
+  else if (d.mladd) { cfg.motion.action.light_sensor = { dark: 300, light: 500 }; renderAuto(); }
+  else if (d.mlrm) { delete cfg.motion.action.light_sensor; renderAuto(); }
+  else if (d.mcur) {
+    const m = lastState && lastState.motion, l = lastState && lastState.light_sensor;
+    const cur = m && m.light != null ? m.light : (l ? l.value : -1);
+    if (cur == null || cur < 0) return toast('Нет текущего значения датчика света', 'warn');
+    cfg.motion.action.light_sensor[d.mcur] = cur;
+    updateAuto();
+  }
   else if (d.lcur) {
     const cur = lastState && lastState.light_sensor ? lastState.light_sensor.value : -1;
     if (cur < 0) return toast('Нет текущего значения датчика', 'warn');
@@ -2171,17 +2253,23 @@ function validateConfig() {
     if (k === 'button' && !(c.action.hold >= 0)) errs.push(`${T}: время удержания — 0 или больше`);
     if (k === 'button' && c.action.hold === 0 && c.action.repeat !== 'release') errs.push(`${T}: «до повторного нажатия» работает только с повтором «Отпустить»`);
     if (k === 'light_sensor' && c.action.dark === c.action.light) errs.push(`${T}: пороги «темно» и «светло» совпадают`);
+    if (k === 'motion' && !(c.action.hold >= 1)) errs.push(`${T}: время удержания — 1 с или больше`);
+    if (k === 'motion' && c.action.light_sensor && c.action.light_sensor.dark === c.action.light_sensor.light) errs.push(`${T}: пороги «темно» и «светло» совпадают`);
   });
   return errs;
 }
 
 async function saveConfig() {
-  if (!Object.keys(AUTO).some(k => cfg[k])) return toast('Нечего сохранять', 'warn');
+  if (!Object.keys(AUTO).some(k => cfg[k] || (cfgOrig && cfgOrig[k]))) return toast('Нечего сохранять', 'warn');
   const errs = validateConfig();
   if (errs.length) return toast(errs[0], 'err');
-  if (!await ask('Сохранить автоматику?', 'Конфиг запишется в память устройства, после чего оно перезагрузится.', 'Сохранить')) return;
+  const removed = Object.keys(AUTO).filter(k => !cfg[k] && cfgOrig && cfgOrig[k]);
+  const msg = 'Конфиг запишется в память устройства, после чего оно перезагрузится.'
+    + (removed.length ? ' Будет удалено с устройства: ' + removed.map(k => AUTO[k].title).join(', ') + '.' : '');
+  if (!await ask('Сохранить автоматику?', msg, 'Сохранить')) return;
   const body = {};
-  ['button', 'light_sensor'].forEach(k => { if (cfg[k]) body[k] = cfg[k]; });
+  removed.forEach(k => { body[k] = null; });   // null — удалить конфиг на устройстве
+  ['button', 'light_sensor', 'motion'].forEach(k => { if (cfg[k]) body[k] = cfg[k]; });
   if (cfg.schedule) {
     body.schedule = {
       is_active: cfg.schedule.is_active !== false,

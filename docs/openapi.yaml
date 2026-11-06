@@ -168,6 +168,7 @@ paths:
       summary: Сохранить конфиг автоматики (перезагрузка)
       description: |
         Каждая секция опциональна и сохраняется целиком, без слияния со старой.
+        `null` вместо объекта (например `{"light_sensor": null}`) удаляет конфиг этой автоматики из NVS.
         Хранится в NVS JSON-blob'ом. После успешной записи устройство **перезагружается** через ~1 с.
         Если запись в NVS не удалась — ошибка, перезагрузки нет.
 
@@ -184,6 +185,9 @@ paths:
               light_sensor:
                 summary: Датчик света вечером
                 value: { light_sensor: { is_active: true, priority: 20, action: { dark: 300, light: 800, time: { start: { hour: 18, minute: 0 }, end: { hour: 8, minute: 0 } }, led: { mode: 254, speed: 50, brightness: 80, color: { r: 255, g: 180, b: 80 } } } } }
+              motion:
+                summary: Подсветка по движению ночью, только в темноте
+                value: { motion: { is_active: true, priority: 15, action: { hold: 60, light_sensor: { dark: 300, light: 500 }, time: { start: { hour: 22, minute: 0 }, end: { hour: 7, minute: 0 } }, led: { mode: 254, speed: 50, brightness: 30, color: { r: 255, g: 180, b: 80 } } } } }
               schedule:
                 summary: Расписание по будням
                 value:
@@ -561,7 +565,7 @@ components:
       type: object
       description: Секции автоматик есть, если для них есть конфиг (в том числе при `is_active false`).
       properties:
-        current_owner: { type: string, description: "Кто держит ленту: button | light_sensor | schedule | \"\" (никто или ручной режим)" }
+        current_owner: { type: string, description: "Кто держит ленту: button | light_sensor | schedule | motion | \"\" (никто или ручной режим)" }
         button:
           type: object
           properties:
@@ -578,6 +582,15 @@ components:
           type: object
           properties:
             applied: { type: boolean }
+        motion:
+          type: object
+          properties:
+            applied: { type: boolean }
+            holding: { type: boolean, description: "Датчик движения держит ленту" }
+            remaining_sec: { type: integer, description: "Сколько ещё держать, сек. Нет поля — не держит" }
+            light: { type: integer, description: "Показание света (только если задан блок light_sensor)" }
+            is_dark: { type: boolean, description: "Решение с гистерезисом (только если задан блок light_sensor)" }
+            last_light: { type: integer, description: "Значение света, по которому принято решение на последнем движении (-1 — движений ещё не было)" }
 
     # ---------- автоматика
     TimeWindow:
@@ -625,6 +638,26 @@ components:
             light: { type: integer, minimum: 0, maximum: 4095, description: "Порог АЦП «стало светло»; между порогами — гистерезис" }
             time: { $ref: "#/components/schemas/TimeWindow" }
             led: { $ref: "#/components/schemas/AutomationLed" }
+    MotionConfig:
+      type: object
+      description: |
+        Датчик движения (PIR). Каждое срабатывание держит ленту `hold` сек; пока пин датчика активен, лента не гаснет.
+        Есть блок `action.light_sensor` — срабатывает только в темноте (гистерезис `dark`/`light`); нет блока — свет не учитывается.
+        Показания света берутся у `light_sensor` из конфига, а если его нет — датчик движения читает АЦП сам.
+      properties:
+        is_active: { type: boolean, default: true }
+        priority: { type: integer, minimum: 0, maximum: 255, default: 15 }
+        action:
+          type: object
+          properties:
+            hold: { type: integer, minimum: 1, default: 30, description: "Сек, сколько держать ленту после движения" }
+            light_sensor:
+              type: object
+              properties:
+                dark: { type: integer, minimum: 0, maximum: 4095, description: "Порог АЦП «темно»" }
+                light: { type: integer, minimum: 0, maximum: 4095, description: "Порог АЦП «светло»; между порогами — гистерезис" }
+            time: { $ref: "#/components/schemas/TimeWindow" }
+            led: { $ref: "#/components/schemas/AutomationLed" }
     ScheduleInterval:
       type: object
       description: start == stop — интервал выбрасывается. stop < start — через полночь (хвост — на следующий день)
@@ -659,6 +692,7 @@ components:
         button: { $ref: "#/components/schemas/ButtonConfig" }
         light_sensor: { $ref: "#/components/schemas/LightSensorConfig" }
         schedule: { $ref: "#/components/schemas/ScheduleConfig" }
+        motion: { $ref: "#/components/schemas/MotionConfig" }
 
     # ---------- сеть
     NetworkInfo:

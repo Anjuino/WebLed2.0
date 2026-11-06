@@ -92,11 +92,11 @@ void i_button::from_json(cJSON *json) {
         state.mode = j_mode->valueint;
       }
       cJSON *j_speed = cJSON_GetObjectItem(j_led, "speed");
-      if (cJSON_IsNumber(j_speed) && j_speed->valueint > 0) {
+      if (cJSON_IsNumber(j_speed) && j_speed->valueint >= 0 && j_speed->valueint <= 255) {
         state.speed = j_speed->valueint;
       }
       cJSON *j_brightness = cJSON_GetObjectItem(j_led, "brightness");
-      if (cJSON_IsNumber(j_brightness) && j_brightness->valueint > 0) {
+      if (cJSON_IsNumber(j_brightness) && j_brightness->valueint >= 0 && j_brightness->valueint <= 255) {
         state.brightness = j_brightness->valueint;
       }
       cJSON *color = cJSON_GetObjectItem(j_led, "color");

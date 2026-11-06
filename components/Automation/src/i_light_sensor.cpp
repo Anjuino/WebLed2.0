@@ -71,11 +71,11 @@ void i_light_sensor::from_json(cJSON *json) {
         state.mode = j_mode->valueint;
       }
       cJSON *j_speed = cJSON_GetObjectItem(j_led, "speed");
-      if (cJSON_IsNumber(j_speed) && j_speed->valueint > 0) {
+      if (cJSON_IsNumber(j_speed) && j_speed->valueint >= 0 && j_speed->valueint <= 255) {
         state.speed = j_speed->valueint;
       }
       cJSON *j_brightness = cJSON_GetObjectItem(j_led, "brightness");
-      if (cJSON_IsNumber(j_brightness) && j_brightness->valueint > 0) {
+      if (cJSON_IsNumber(j_brightness) && j_brightness->valueint >= 0 && j_brightness->valueint <= 255) {
         state.brightness = j_brightness->valueint;
       }
       cJSON *color = cJSON_GetObjectItem(j_led, "color");
@@ -106,6 +106,8 @@ void i_light_sensor::start() {
 }
 
 void i_light_sensor::on_light(int value) {
+  last_value = value;   // до проверки is_active: выключенный датчик всё равно измеряет (его читает датчик движения)
+
   if (!is_active) {
     if (applied) {
       ESP_LOGI(TAG, "источник отключён, отпускаю ленту");
@@ -115,7 +117,6 @@ void i_light_sensor::on_light(int value) {
     return;
   }
 
-  last_value = value;
   bool less_is_darker = dark < light;
   if (less_is_darker ? value <= dark : value >= dark) {
     is_dark = true;

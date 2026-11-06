@@ -3,6 +3,7 @@
 #include "i_button.h"
 #include "i_light_sensor.h"
 #include "i_schedule.h"
+#include "i_motion.h"
 #include <algorithm>
 #include <cstring>
 #include <math.h>
@@ -58,6 +59,9 @@ device::device() : settings(STORAGE_DEVICE, false)
   add_automation<i_button>(KEY_BUTTON_CONFIG);
   add_automation<i_light_sensor>(KEY_LIGHT_SENSOR_CONFIG);
   add_automation<i_schedule>(KEY_SCHEDULE_CONFIG);
+  // движение — строго после света: ему нужно найти i_light_sensor в списке, иначе оно заведёт
+  // свой драйвер света, а второй раз тот же ADC инициализировать нельзя
+  add_automation<i_motion>(KEY_MOTION_CONFIG);
 }
 
 device::~device()
@@ -81,12 +85,22 @@ static esp_err_t api_device_handler_post(httpd_req_t *req) {
       { "button",       KEY_BUTTON_CONFIG },
       { "light_sensor", KEY_LIGHT_SENSOR_CONFIG },
       { "schedule",     KEY_SCHEDULE_CONFIG },
+      { "motion",       KEY_MOTION_CONFIG },
     };
 
     const char *failed = nullptr;
     bool saved = false;
     for (const auto &s : sections) {
       cJSON *item = cJSON_GetObjectItem(root, s.json_key);
+      if (cJSON_IsNull(item)) {   // "секция": null — удалить конфиг с устройства
+        if (!contorller->settings.erase(s.nvs_key)) {
+          failed = s.json_key;
+          break;
+        }
+        ESP_LOGI(TAG, "конфиг %s удалён", s.json_key);
+        saved = true;
+        continue;
+      }
       if (!cJSON_IsObject(item)) continue;
       if (!contorller->save_config(s.nvs_key, item)) {
         failed = s.json_key;
@@ -129,6 +143,9 @@ static esp_err_t api_device_handler_get(httpd_req_t *req) {
 
     cJSON *schedule = cJSON_Parse(contorller->load_config(KEY_SCHEDULE_CONFIG).c_str());
     if (schedule) cJSON_AddItemToObject(root, "schedule", schedule);
+
+    cJSON *motion = cJSON_Parse(contorller->load_config(KEY_MOTION_CONFIG).c_str());
+    if (motion) cJSON_AddItemToObject(root, "motion", motion);
 
     return send_resp_json(root, req);
   }
@@ -649,6 +666,13 @@ void device::release(Automation *who) {
   } else {
     ESP_LOGI(TAG, "release: %s — не владелец, игнор", who->get_name().c_str());
   }
+}
+
+bool device::is_owner(Automation *who) {
+  xSemaphoreTake(owner_mutex, portMAX_DELAY);
+  bool owner = current_owner == who;
+  xSemaphoreGive(owner_mutex);
+  return owner;
 }
 
 std::string device::get_owner_name() {

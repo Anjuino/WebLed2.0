@@ -7,7 +7,10 @@ void light_sensor::task_entry(void* arg) {
   int prev_value = 0;
 
   while (true) {
-    if (adc_oneshot_read(self->adc_handle, self->channel, &raw) == ESP_OK) {
+    xSemaphoreTake(self->lock, portMAX_DELAY);
+    esp_err_t err = adc_oneshot_read(self->adc_handle, self->channel, &raw);
+    xSemaphoreGive(self->lock);
+    if (err == ESP_OK) {
       value = 0.3 * prev_value + 0.7 * raw;
       prev_value = value; 
       self->user_cb(value, self->user_arg);
@@ -41,6 +44,11 @@ bool light_sensor::init(int gpio_num, void (*cb)(int value, void *user_data), ui
     return false;
   }
 
+  lock = xSemaphoreCreateMutex();
+  if (!lock) {
+    return false;
+  }
+
   if (xTaskCreate(task_entry, "light_tsk", 3*1024, this, 5, &task) != pdPASS) {
     return false;
   }
@@ -48,9 +56,29 @@ bool light_sensor::init(int gpio_num, void (*cb)(int value, void *user_data), ui
   return true;
 }
 
+int light_sensor::read_now() {
+  if (!adc_handle || !lock) return -1;
+  if (xSemaphoreTake(lock, pdMS_TO_TICKS(200)) != pdTRUE) return -1;
+
+  const int samples = 4;
+  int sum = 0, ok = 0, raw = 0;
+  for (int i = 0; i < samples; i++) {
+    if (adc_oneshot_read(adc_handle, channel, &raw) == ESP_OK) {
+      sum += raw;
+      ok++;
+    }
+  }
+  xSemaphoreGive(lock);
+
+  return ok ? sum / ok : -1;
+}
+
 light_sensor::~light_sensor() {
     if (task) {
       vTaskDelete(task);
+    }
+    if (lock) {
+      vSemaphoreDelete(lock);
     }
     if (adc_handle) {
       adc_oneshot_del_unit(adc_handle);

@@ -6,6 +6,7 @@
 #define KEY_BUTTON_CONFIG "btn_cfg"
 #define KEY_LIGHT_SENSOR_CONFIG "light_cfg"
 #define KEY_SCHEDULE_CONFIG "schedule_cfg"
+#define KEY_MOTION_CONFIG "motion_cfg"
 
 #include <memory>
 #include "nvs_proxy.h"
@@ -42,6 +43,7 @@ class device {
 
     bool engage(Automation *who);
     void release(Automation *who);
+    bool is_owner(Automation *who);   // лентой владеет именно этот источник
     void set_manual(bool on);   // вкл — автоматика заблокирована, пока пользователь не выключит
     bool is_manual() { return manual_active; };
     std::string get_owner_name();   // "" — лентой никто из автоматики не владеет
