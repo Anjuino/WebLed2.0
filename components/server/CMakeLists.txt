@@ -8,8 +8,11 @@ if(CONFIG_SERVER_HTTPS)
     target_add_binary_data(${COMPONENT_LIB} "cert/cert.crt" EMBED_FILES)
     target_add_binary_data(${COMPONENT_LIB} "cert/private.key" EMBED_FILES)
     target_add_binary_data(${COMPONENT_LIB} "cert/ca.crt" EMBED_FILES)
-    target_add_binary_data(${COMPONENT_LIB} "cert/remote_ca.crt" EMBED_TXTFILES)
 endif()
+
+# Remote OTA always talks to the update server over HTTPS, so its CA is
+# embedded regardless of the local web-server protocol (HTTP or HTTPS).
+target_add_binary_data(${COMPONENT_LIB} "cert/remote_ca.crt" EMBED_TXTFILES)
 idf_build_get_property(python PYTHON)
 set(WEB_PAGE_SRC "${CMAKE_CURRENT_SOURCE_DIR}/web/index.html")
 set(WEB_PAGE_GZ  "${CMAKE_CURRENT_BINARY_DIR}/index.html.gz")

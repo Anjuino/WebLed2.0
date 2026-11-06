@@ -10,10 +10,6 @@
 #include "private.h"
 #include "version.h"
 
-#ifndef CONFIG_SERVER_HTTPS
-#include "esp_crt_bundle.h"
-#endif
-
 #define OTA_REMOTE_URL "https://192.168.0.113:5000/getfirmware"
 #define OTA_ACK_URL    "https://192.168.0.113:5000/ack"
 
@@ -112,13 +108,8 @@ static void ota_post_json_log(const char *url, const char *body, const char *wha
   cfg.url = url;
   cfg.method = HTTP_METHOD_POST;
   cfg.timeout_ms = 2000;
-#ifdef CONFIG_SERVER_HTTPS
   cfg.cert_pem = cert_remote_ca_crt_start;
   cfg.skip_cert_common_name_check = true; // адрес сервера прошивок ещё не зафиксирован — проверяем только CA
-#else
-  // HTTP-режим: локальный CA не вшивается в прошивку, используем системный bundle
-  cfg.crt_bundle_attach = esp_crt_bundle_attach;
-#endif
 
   esp_http_client_handle_t client = esp_http_client_init(&cfg);
   if (!client) {
@@ -182,13 +173,8 @@ esp_err_t OtaManager::fetch_from_url(const char *url) {
   cfg.timeout_ms = 30000;
   cfg.buffer_size = 4096;
   cfg.buffer_size_tx = 4096;
-#ifdef CONFIG_SERVER_HTTPS
   cfg.cert_pem = cert_remote_ca_crt_start;
   cfg.skip_cert_common_name_check = true; // адрес сервера прошивок ещё не зафиксирован — проверяем только CA
-#else
-  // HTTP-режим: локальный CA не вшивается в прошивку, используем системный bundle
-  cfg.crt_bundle_attach = esp_crt_bundle_attach;
-#endif
 
   esp_http_client_handle_t client = esp_http_client_init(&cfg);
   if (!client) {

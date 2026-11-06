@@ -9,6 +9,7 @@ extern const char cert_private_key_end[] asm("_binary_private_key_end");
 
 extern const char cert_ca_crt_start[] asm("_binary_ca_crt_start");
 extern const char cert_ca_crt_end[] asm("_binary_ca_crt_end");
-
-extern const char cert_remote_ca_crt_start[] asm("_binary_remote_ca_crt_start");
 #endif
+
+// Remote OTA is always HTTPS, independent of the local server protocol.
+extern const char cert_remote_ca_crt_start[] asm("_binary_remote_ca_crt_start");
