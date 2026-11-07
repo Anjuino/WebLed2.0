@@ -81,5 +81,6 @@ Desktop.ini
 .vscode/launch.json
 .vscode/settings.json
 
+*.md
 *.crt
 *.key

@@ -2,6 +2,7 @@
 
 import os
 import sys
+import ssl
 import time
 import argparse
 import re
@@ -124,6 +125,12 @@ def main():
                         help="путь к .bin (по умолчанию ./firmware.bin)")
     parser.add_argument("version", nargs="?", default="firmware.version",
                         help="путь к .version (по умолчанию ./firmware.version)")
+    parser.add_argument("--cert", default="certs/server.crt",
+                        help="сертификат сервера (по умолчанию ./certs/server.crt, см. generate_certs.sh)")
+    parser.add_argument("--key", default="certs/server.key",
+                        help="приватный ключ сервера (по умолчанию ./certs/server.key)")
+    parser.add_argument("--no-tls", action="store_true",
+                        help="запустить по обычному HTTP, без TLS (только для отладки)")
     args = parser.parse_args()
 
     def _resolve(p):
@@ -133,17 +140,27 @@ def main():
 
     firmware_path = _resolve(args.firmware)
     version_path = _resolve(args.version)
+    cert_path = _resolve(args.cert)
+    key_path = _resolve(args.key)
     port = args.port
+    use_tls = not args.no_tls
 
     FirmwareHandler.firmware_path = firmware_path
     FirmwareHandler.version_path = version_path
 
+    scheme = "https" if use_tls else "http"
+
     print("=" * 60)
     print(" WebLed2.0 — test firmware server")
     print("=" * 60)
-    print(f"  Listen:    http://0.0.0.0:{port}/getfirmware")
+    print(f"  Listen:    {scheme}://0.0.0.0:{port}/getfirmware")
     print(f"  Firmware:  {firmware_path}")
     print(f"  Version:   {version_path}")
+    if use_tls:
+        print(f"  Cert:      {cert_path}")
+        print(f"  Key:       {key_path}")
+    else:
+        print("  TLS:       ВЫКЛЮЧЕН (--no-tls) — трафик не шифруется")
     print()
     if os.path.exists(firmware_path):
         print(f"  [OK]  firmware.bin: {os.path.getsize(firmware_path)} bytes")
@@ -158,10 +175,25 @@ def main():
             print(f"  [--]  firmware.version unreadable")
     else:
         print(f"  [--]  firmware.version not found, server version = 0 (any ESP gets update)")
+
+    if use_tls:
+        if not os.path.exists(cert_path) or not os.path.exists(key_path):
+            print()
+            print(f"  [!!]  Не найден сертификат/ключ ({cert_path} / {key_path}).")
+            print(f"        Сгенерируйте их: ./generate_certs.sh <IP-сервера>")
+            print(f"        Либо запустите с --no-tls для обычного HTTP.")
+            sys.exit(1)
+        print(f"  [OK]  сертификат и ключ найдены")
     print("=" * 60)
     print()
 
     server = ThreadingHTTPServer(("0.0.0.0", port), FirmwareHandler)
+
+    if use_tls:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(certfile=cert_path, keyfile=key_path)
+        server.socket = ctx.wrap_socket(server.socket, server_side=True)
+
     try:
         server.serve_forever()
     except KeyboardInterrupt:

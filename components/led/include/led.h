@@ -4,9 +4,11 @@
 #include "led_strip.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "esp_log.h"
 #include "nvs_proxy.h"
 #include <cstring>
+#include <atomic>
 #include <tuple>
 #include <vector>
 
@@ -23,11 +25,14 @@
 #define KEY_LED_COLOR_G "color_g"
 #define KEY_LED_COLOR_B "color_b"
 
+#define KEY_LED_MODEL "led_model"          // led_model_t: WS2812 / WS2815
+#define KEY_LED_PIXEL_FORMAT "px_format"   // led_pixel_format_t: GRB / RGB
+
 class led;
 
 struct LedEffect {
   uint8_t id;                                  // Порядковый номер режима
-  const char *name;                            // Имя режима
+  std::string name;                            // Имя режима
   bool continuous;                             // true - для анимаций, false - разовое включение
   void (*apply)(led *self, void *user_data);   // Функция для исполнения — обычная свободная
                                                // функция с led* явным параметром, а не метод
@@ -46,19 +51,29 @@ class led {
     led_strip_handle_t led_strip = nullptr;
     SemaphoreHandle_t mutex = nullptr;
 
+    TaskHandle_t task_handle = nullptr;
+    std::atomic<uint16_t> requested_count{0};   // != 0 — задача Led пересоздаст ленту
+    std::atomic<bool> requested_reinit{false};   // сменился тип ленты — задача Led пересоздаст ленту
+
+    void reinit_strip(uint16_t new_led_count);
+
     std::vector<LedEffect> effects_table;
 
     protected:
       uint8_t r = 0, g = 0, b = 0;
       uint16_t led_count = 1;
+      led_model_t model = LED_MODEL_WS2812;
+      led_pixel_format_t pixel_format = LED_PIXEL_FORMAT_GRB;
       uint8_t speed = 20;
       uint8_t brightness = 20;
-      uint8_t mode = 1;
+      uint8_t mode = 0;
       bool save_mode = false;
 
       virtual void task();
 
       const LedEffect *find_effect(uint8_t id) const;
+
+      void update_field(uint8_t &field, uint8_t new_value, const char *log_name, const char *key, bool persist, bool &need_commit);
 
   public:
 
@@ -77,13 +92,17 @@ class led {
     bool init();
     void set_pixel(uint16_t pixel_count, uint8_t r, uint8_t g, uint8_t b);
 
-    void set_save_mode(bool new_save_mode);
-    void set_mode(uint8_t new_mode) { set_state(this->r, this->g, this->b, new_mode, this->speed, this->brightness); };
-    void set_color(uint8_t new_r, uint8_t new_g, uint8_t new_b) { set_state(new_r, new_g, new_b, this->mode, this->speed, this->brightness); };
-    void set_brightness(uint8_t new_brightness) { set_state(this->r, this->g, this->b, this->mode, this->speed, new_brightness); };
-    void set_speed(uint8_t new_speed) { set_state(this->r, this->g, this->b, this->mode, new_speed, this->brightness); };
+    void set_save_mode(bool new_save_mode, bool persist = true);
+    bool get_save_mode() { return save_mode;};
+    bool read_save_mode_from_nvs() { return settings.get<uint8_t>(KEY_LED_SAVE_MODE, 0) != 0; };
+    void set_mode(uint8_t new_mode, bool persist = false) { set_state(this->r, this->g, this->b, new_mode, this->speed, this->brightness, persist); };
+    void set_color(uint8_t new_r, uint8_t new_g, uint8_t new_b, bool persist = false) { set_state(new_r, new_g, new_b, this->mode, this->speed, this->brightness, persist); };
+    void set_brightness(uint8_t new_brightness, bool persist = false) { set_state(this->r, this->g, this->b, this->mode, this->speed, new_brightness, persist); };
+    void set_speed(uint8_t new_speed, bool persist = false) { set_state(this->r, this->g, this->b, this->mode, new_speed, this->brightness, persist); };
 
-    void set_state(uint8_t r, uint8_t g, uint8_t b, uint8_t mode, uint8_t speed, uint8_t brightness);
+    // persist=true — разрешить запись в NVS (только ручной путь);
+    // false (по умолчанию) — только применить состояние, автоматика в NVS не пишет
+    void set_state(uint8_t r, uint8_t g, uint8_t b, uint8_t mode, uint8_t speed, uint8_t brightness, bool persist = false);
 
     uint8_t get_speed(void) { return speed; };
     uint8_t get_brightness(void) { return brightness; };
@@ -92,7 +111,16 @@ class led {
     std::tuple<uint8_t, uint8_t, uint8_t> get_color() { return {r, g, b}; };
 
     bool update_led_count(uint16_t new_count);
+
+    // тип ленты и порядок цветов; сохраняется в NVS, лента пересоздаётся задачей Led.
+    // Поддерживаются WS2812/WS2815 и GRB/RGB — иначе false
+    bool set_strip_type(led_model_t new_model, led_pixel_format_t new_format);
+    led_model_t get_model() { return model; };
+    led_pixel_format_t get_pixel_format() { return pixel_format; };
     void show(void);
+
+    void refresh() { if (task_handle) xTaskNotifyGive(task_handle); };
+    void wait(uint32_t ms) { ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(ms)); };
 
     void off(void);
 

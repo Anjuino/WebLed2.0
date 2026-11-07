@@ -4,16 +4,21 @@
 #include "esp_http_server.h"
 #include "esp_event.h"
 #include <string.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
 #include <vector>
 #include <algorithm>
 #include <math.h>
 #include <tuple>
-#include "DeviceManager.h"
 #include "cJSON.h"
-#include "wifimanager.h"
-#include "http_json.h"
+#include "helper_server.h"
+#include "script_engine.h"
+#include "sntp_time.h"
+#include "mdns.h"
+#include "version.h"
+#include "lwip/sockets.h"
+
 
 #ifdef CONFIG_SERVER_HTTPS
 #include "esp_https_server.h"
@@ -24,148 +29,41 @@
 
 static const char *TAG = "Server";
 
-static esp_err_t api_led_info_handler(httpd_req_t *req) {
-  led *wLed = (led*)req->user_ctx;
-  cJSON *root = cJSON_CreateObject();
-  if(root) {
-    cJSON_AddNumberToObject(root, "speed", wLed->get_speed());
-    cJSON_AddNumberToObject(root, "mode", wLed->get_mode());
-    cJSON_AddNumberToObject(root, "brightness", wLed->get_brightness());
+extern const char index_html_gz_start[] asm("_binary_index_html_gz_start");
+extern const char index_html_gz_end[]   asm("_binary_index_html_gz_end");
 
-    auto [r, g, b] = wLed->get_color();
-    cJSON *color = cJSON_CreateObject();
-    if(color) {
-      cJSON_AddNumberToObject(color, "r", r);
-      cJSON_AddNumberToObject(color, "g", g);
-      cJSON_AddNumberToObject(color, "b", b);
-      cJSON_AddItemToObject(root, "color", color);
-    } else {
-      cJSON_Delete(root);
-      return send_resp_json(NULL, req);
-    }
-
-    cJSON *modes = cJSON_CreateArray();
-    if(modes) {
-      size_t effects_count = 0;
-      const LedEffect *effects = wLed->effects(&effects_count);
-
-      std::vector<LedEffect> sorted_effects(effects, effects + effects_count);
-      std::sort(sorted_effects.begin(), sorted_effects.end(), [](const LedEffect &a, const LedEffect &b) { return a.id < b.id; });
-
-      for (const auto &fx : sorted_effects) {
-        cJSON *m = cJSON_CreateObject();
-        if (m) {
-          cJSON_AddNumberToObject(m, "id_mode", fx.id);
-          cJSON_AddStringToObject(m, "name", fx.name);
-          cJSON_AddItemToArray(modes, m);
-        }
-      }
-      cJSON_AddItemToObject(root, "modes", modes);
-    } else {
-      cJSON_Delete(root);
-      return send_resp_json(NULL, req);
-    }
+static const char *index_etag() {
+  static char etag[64];
+  if (!etag[0]) {
+    snprintf(etag, sizeof(etag), "\"%s\"", firmware_version());
   }
-  return send_resp_json(root, req);
+  return etag;
 }
 
-static esp_err_t api_led_control_handler(httpd_req_t *req) {
-  ESP_LOGI(TAG, "Запрос пришел");
-  led *wLed = (led*)req->user_ctx;
+static esp_err_t index_handler(httpd_req_t *req) {
+  const char *etag = index_etag();
 
-  char buf[256] = {0};
-  int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
-  if(ret <= 0) {
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Empty body");
-    return ESP_FAIL;
+  char inm[64];
+  if (httpd_req_get_hdr_value_str(req, "If-None-Match", inm, sizeof(inm)) == ESP_OK && strcmp(inm, etag) == 0) {
+    httpd_resp_set_status(req, "304 Not Modified");
+    httpd_resp_set_hdr(req, "ETag", etag);
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    return httpd_resp_send(req, nullptr, 0);
   }
 
-  cJSON *root = cJSON_Parse(buf);
-  if(!root) {
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
-    return ESP_FAIL;
-  }
-
-  cJSON *mode = cJSON_GetObjectItem(root, "mode");
-  if(cJSON_IsNumber(mode) && !wLed->is_valid_mode((uint8_t)mode->valueint)) {
-    cJSON_Delete(root);
-    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Unknown mode id");
-    return ESP_FAIL;
-  }
-
-  cJSON *speed = cJSON_GetObjectItem(root, "speed");
-  if(cJSON_IsNumber(speed)) wLed->set_speed(speed->valueint);
-
-  if(cJSON_IsNumber(mode)) wLed->set_mode(mode->valueint);
-
-  cJSON *brightness = cJSON_GetObjectItem(root, "brightness");
-  if(cJSON_IsNumber(brightness)) wLed->set_brightness(brightness->valueint);
-
-  cJSON *color = cJSON_GetObjectItem(root, "color");
-  if(cJSON_IsObject(color)) {
-    cJSON *r = cJSON_GetObjectItem(color, "r");
-    cJSON *g = cJSON_GetObjectItem(color, "g");
-    cJSON *b = cJSON_GetObjectItem(color, "b");
-    if(cJSON_IsNumber(r) && cJSON_IsNumber(g) && cJSON_IsNumber(b)) {
-      wLed->set_color(r->valueint, g->valueint, b->valueint);
-    }
-  }
-
-  cJSON_Delete(root);
-  return send_json_status(req, "success", true, nullptr, nullptr);
+  httpd_resp_set_type(req, "text/html; charset=utf-8");
+  httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+  httpd_resp_set_hdr(req, "ETag", etag);
+  return httpd_resp_send(req, index_html_gz_start, index_html_gz_end - index_html_gz_start);
 }
 
-static esp_err_t api_device_info_handler(httpd_req_t *req) {
-  cJSON *root = cJSON_CreateObject();
-  if(!root) return send_resp_json(NULL, req);
-
-  memory_info memory = getstatus();
-  double temperature = round(memory.temperature * 100.0) / 100.0;
-  cJSON_AddNumberToObject(root, "cpu_temp", temperature);
-
-  cJSON *_memory = cJSON_CreateObject();
-  if(!_memory) {
-    cJSON_Delete(root);
-    return send_resp_json(NULL, req);
+static esp_err_t on_socket_open(httpd_handle_t hd, int sockfd) {
+  int one = 1;
+  if (setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one)) != 0) {
+    ESP_LOGW(TAG, "TCP_NODELAY failed on socket %d", sockfd);
   }
-  
-  cJSON_AddNumberToObject(_memory, "iram_total", memory.total);
-  cJSON_AddNumberToObject(_memory, "iram_free", memory.free);
-  cJSON_AddNumberToObject(_memory, "iram_min_free", memory.min_free);
-  cJSON_AddItemToObject(root, "memory_info", _memory);
-
-  cJSON *wifi_array = cJSON_CreateArray();
-  if(!wifi_array) {
-    cJSON_Delete(root);
-    return send_resp_json(NULL, req);
-  }
-
-  extern wifimanager *wifi;
-  std::vector<wifi_ap_record_t> wifi_networks = wifi->scan_wifi_networks();
-
-  for (size_t i = 0; i < wifi_networks.size(); i++) {
-    wifi_ap_record_t ap = wifi_networks[i];
-    cJSON *ap_obj = cJSON_CreateObject();
-    if(!ap_obj) {
-      cJSON_Delete(wifi_array);
-      cJSON_Delete(root);
-      return send_resp_json(NULL, req);
-    }
-
-    cJSON_AddStringToObject(ap_obj, "ssid", (const char*)ap.ssid);
-    cJSON_AddNumberToObject(ap_obj, "rssi", ap.rssi);
-
-    char mac_str[18];
-    snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x",
-            ap.bssid[0], ap.bssid[1], ap.bssid[2],
-            ap.bssid[3], ap.bssid[4], ap.bssid[5]);
-    cJSON_AddStringToObject(ap_obj, "bssid", mac_str);
-
-    cJSON_AddItemToArray(wifi_array, ap_obj);
-  }
-
-  cJSON_AddItemToObject(root, "wifi_networks", wifi_array);
-  return send_resp_json(root, req);
+  return ESP_OK;
 }
 
 #ifdef CONFIG_SERVER_HTTPS
@@ -196,8 +94,9 @@ void server::checkCertificate() {
 }
 #endif
 
-server::server(class led *_led) {
-  if(_led) wLed = _led;
+server::server(class wifimanager *_wifi, class device *_device) {
+  if(_wifi) wifi = _wifi;
+  if(_device) controller = _device;
 }
 
 server::~server() {
@@ -230,14 +129,16 @@ esp_err_t server::start() {
   ssl_config.cacert_pem = (const uint8_t *)cert_ca_crt_start;
   ssl_config.cacert_len = ca_len;
 
-  ssl_config.httpd.recv_wait_timeout = 15;
-  ssl_config.httpd.send_wait_timeout = 15;
+  ssl_config.httpd.recv_wait_timeout = 20;
+  ssl_config.httpd.send_wait_timeout = 20;
   ssl_config.transport_mode = HTTPD_SSL_TRANSPORT_SECURE;
   ssl_config.tls_handshake_timeout_ms = 5000;
   ssl_config.session_tickets = true;
   ssl_config.httpd.task_priority = 10;
-  ssl_config.httpd.max_open_sockets = 2;
-  
+  ssl_config.httpd.max_open_sockets = 6;
+  ssl_config.httpd.stack_size = 15 * 1024;
+  ssl_config.httpd.max_uri_handlers = 16;
+  ssl_config.httpd.lru_purge_enable = true;
   esp_err_t err = httpd_ssl_start(&m_server, &ssl_config);
 #else
   uint16_t port = 80;
@@ -245,11 +146,18 @@ esp_err_t server::start() {
 
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = port;
-  config.recv_wait_timeout = 5;
-  config.send_wait_timeout = 5;
+  config.recv_wait_timeout = 20;
+  config.send_wait_timeout = 20;
   config.task_priority = 10;
-  config.max_open_sockets = 6;
-  config.stack_size = 15 * 1024;
+  config.max_open_sockets = 7;
+  config.stack_size = 10 * 1024;
+  config.max_uri_handlers = 24;
+  config.lru_purge_enable = true;
+  config.keep_alive_enable = true;
+  config.keep_alive_idle = 15;
+  config.keep_alive_interval = 5;
+  config.keep_alive_count = 3;
+  config.open_fn = on_socket_open;
 
   esp_err_t err = httpd_start(&m_server, &config);
 #endif
@@ -263,32 +171,42 @@ esp_err_t server::start() {
       return err;
   }
 
-  httpd_uri_t led_info_handler = {
-    .uri = "/api/led",
+  httpd_uri_t index_uri = {
+    .uri = "/",
     .method = HTTP_GET,
-    .handler = api_led_info_handler,
-    .user_ctx = wLed
-  };
-  httpd_register_uri_handler(m_server, &led_info_handler);
-
-  httpd_uri_t led_control_handler = {
-    .uri = "/api/led",
-    .method = HTTP_POST,
-    .handler = api_led_control_handler,
-    .user_ctx = wLed
-  };
-  httpd_register_uri_handler(m_server, &led_control_handler);
-
-  httpd_uri_t device_info_handler = {
-    .uri = "/api/deviceinfo",
-    .method = HTTP_GET,
-    .handler = api_device_info_handler,
+    .handler = index_handler,
     .user_ctx = nullptr
   };
-  httpd_register_uri_handler(m_server, &device_info_handler);
+  httpd_register_uri_handler(m_server, &index_uri);
 
   m_ota.register_handlers(m_server);
+  wifi->register_handlers(m_server);
+  controller->register_handlers(m_server);
 
+  esp_err_t mdns_err = mdns_init();
+  if (mdns_err != ESP_OK) {
+    ESP_LOGE(TAG, "mdns_init failed: %s", esp_err_to_name(mdns_err));
+    return mdns_err;
+  }
+
+  std::string hostname = wifi->get_mdns_name();
+  mdns_hostname_set(hostname.c_str());
+  mdns_instance_name_set(hostname.c_str());
+
+  const char *service_proto = "tcp";
+#ifdef CONFIG_SERVER_HTTPS
+  const uint16_t service_port = 443;
+#else
+  const uint16_t service_port = 80;
+#endif
+  mdns_err = mdns_service_add(NULL, "_http", service_proto, service_port, NULL, 0);
+  if (mdns_err != ESP_OK) {
+    ESP_LOGE(TAG, "mdns_service_add failed: %s", esp_err_to_name(mdns_err));
+    mdns_free();
+    return mdns_err;
+  }
+
+  ESP_LOGI(TAG, "mDNS started: %s.local on port %u", hostname.c_str(), service_port);
   ESP_LOGI(TAG, "Server started successfully");
   return ESP_OK;
 }
@@ -302,6 +220,7 @@ void server::stop() {
     #endif
 
     m_server = nullptr;
+    mdns_free();
     ESP_LOGI(TAG, "Server stopped");
   }
 }

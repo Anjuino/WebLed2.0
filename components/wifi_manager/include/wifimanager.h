@@ -11,6 +11,7 @@
 #include "esp_mac.h"
 #include "cJSON.h"
 #include "vector"
+#include "server.h"
 
 #define STORAGE_WIFI "wifi"
 
@@ -69,18 +70,22 @@ class wifimanager {
 
     bool get_info_ap(std::string& ap, std::string& password);
     bool set_ap(const std::string& ap, const std::string& password, bool need_save);
+    bool start_ap();   // запасная точка с текущими ap_name/ap_pswd, без записи в NVS
 
     wifi_mode_t get_mode() { return mode; };
 
     bool set_mode(wifi_mode_t _mode, bool need_save);
 
     std::string get_mdns_name() { return mdns; };
+    std::string get_ip(bool ap);   // IPv4 интерфейса STA/AP, "" — интерфейса нет или адрес не получен
     bool set_mdns(const std::string& _mdns, bool need_save);
 
     bool ready() { return is_ready; };
 
     void parse_command(char* json, size_t len);
     void get_wifi_state_json(char* json_out, size_t max_len);
+
+    void register_handlers(httpd_handle_t httpd);
 };
 
 #endif // WIFIMANAGER_H

@@ -99,7 +99,7 @@ esp_err_t rmt_new_led_strip_encoder(const led_strip_encoder_config_t *config, rm
             },
             .flags.msb_first = 1 // SK6812 transfer bit order: G7...G0R7...R0B7...B0(W7...W0)
         };
-    } else if (config->led_model == LED_MODEL_WS2812) {
+    } else if (config->led_model == LED_MODEL_WS2812 || config->led_model == LED_MODEL_WS2815) {
         // different led strip might have its own timing requirements, following parameter is for WS2812
         bytes_encoder_config = (rmt_bytes_encoder_config_t) {
             .bit0 = {

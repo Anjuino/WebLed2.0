@@ -142,7 +142,7 @@ class NVSProxy {
       return result;
     }
 
-    template<typename T>
+    template<typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
     bool set(const char* key, T value, bool commit = false) {
       if (mutex == nullptr || xSemaphoreTake(mutex, pdMS_TO_TICKS(3000)) != pdTRUE) {
         ESP_LOGE(TAG, "Failed to take mutex in set()");
@@ -333,6 +333,79 @@ class NVSProxy {
       
       xSemaphoreGive(mutex);
       return result;
+    }
+
+    bool set_blob(const char* key, const std::string& value, bool commit = false) {
+      return set_blob(key, value.data(), value.size(), commit);
+    }
+
+    std::string get_blob_as_string(const char* key, const std::string& default_value = "") {
+      if (mutex == nullptr || xSemaphoreTake(mutex, pdMS_TO_TICKS(3000)) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to take mutex in get_blob_as_string()");
+        return default_value;
+      }
+
+      if (handle == 0) {
+        xSemaphoreGive(mutex);
+        return default_value;
+      }
+
+      size_t length = 0;
+      esp_err_t err = nvs_get_blob(handle, key, NULL, &length);
+      if (err != ESP_OK || length == 0) {
+        xSemaphoreGive(mutex);
+        if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) {
+          ESP_LOGW(TAG, "Failed to get blob key '%s': %s", key, esp_err_to_name(err));
+        }
+        return default_value;
+      }
+
+      std::string result;
+      result.resize(length);
+      err = nvs_get_blob(handle, key, result.data(), &length);
+
+      xSemaphoreGive(mutex);
+      if (err != ESP_OK) {
+        return default_value;
+      }
+      return result;
+    }
+
+    // удаляет ключ любого типа; отсутствие ключа — не ошибка
+    bool erase(const char* key, bool commit = false) {
+      if (mutex == nullptr || xSemaphoreTake(mutex, pdMS_TO_TICKS(3000)) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to take mutex in erase()");
+        return false;
+      }
+
+      nvs_handle_t write_handle = handle;
+      bool need_close = false;
+
+      if (is_readonly || handle == 0) {
+        esp_err_t err = nvs_open(namespace_name, NVS_READWRITE, &write_handle);
+        if (err != ESP_OK) {
+          ESP_LOGE(TAG, "Failed to open NVS for writing: %s", esp_err_to_name(err));
+          xSemaphoreGive(mutex);
+          return false;
+        }
+        need_close = true;
+      }
+
+      esp_err_t err = nvs_erase_key(write_handle, key);
+      if (err == ESP_ERR_NVS_NOT_FOUND) err = ESP_OK;
+      if (err == ESP_OK && commit) {
+        err = nvs_commit(write_handle);
+      }
+      if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to erase key '%s': %s", key, esp_err_to_name(err));
+      }
+
+      if (need_close && write_handle != 0) {
+        nvs_close(write_handle);
+      }
+
+      xSemaphoreGive(mutex);
+      return err == ESP_OK;
     }
 
     bool is_open() const { return handle != 0; }
