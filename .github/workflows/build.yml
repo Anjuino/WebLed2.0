@@ -3,12 +3,6 @@ name: Build ESP32 WebLed2.0
 on:
   push:
     branches: [main]
-  workflow_dispatch:
-    inputs:
-      full_clean:
-        description: "Выполнить idf.py fullclean перед сборкой"
-        type: boolean
-        default: true
 
 concurrency:
   group: esp32-build-${{ github.ref }}
@@ -34,15 +28,12 @@ jobs:
           git fetch https://github.com/Anjuino/WebLed2.0.git main
           git checkout -f -B main FETCH_HEAD
 
-      - name: Build firmware
+      - name: Clean and build firmware
         run: |
           source "$IDF_EXPORT"
           echo "ESP-IDF version: $(idf.py --version)"
 
-          # inputs.full_clean приходит только при ручном запуске (workflow_dispatch).
-          # При push inputs пустой, поэтому fullclean не выполняется.
-          FULL_CLEAN="${{ inputs.full_clean }}"
-          if [ "${FULL_CLEAN,,}" = "true" ]; then
+          if [ -d build ]; then
             echo "Running idf.py fullclean..."
             idf.py fullclean
           fi
