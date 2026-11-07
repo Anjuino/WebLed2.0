@@ -49,6 +49,14 @@ jobs:
           echo "✅ Firmware built successfully!"
           ls -lh "$FW_BIN"
 
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WebLed2.0-firmware
+          path: /home/andrey/Project/WebLed2.0/build/WebLed2.0.bin
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Import firmware
         run: |
           cd /home/andrey/Project/webled-server/FirmwareImport
