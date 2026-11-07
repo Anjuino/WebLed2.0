@@ -19,6 +19,9 @@ void led::add_effect(uint8_t id, const char *name, bool continuous,
                       void (*apply)(led *self, void *user_data), void *user_data)
 {
   effects_table.push_back({ id, name, continuous, apply, user_data });
+  // если этот id был сохранён как текущий режим, задача Led должна применить его сразу
+  // (для встроенных эффектов в конструкторе task_handle ещё nullptr — refresh ничего не делает)
+  refresh();
 }
 
 led::led() : settings(STORAGE_LED, false)
@@ -50,8 +53,10 @@ led::led() : settings(STORAGE_LED, false)
     led_count = settings.get<uint16_t>(KEY_LED_COUNT, 1);
     speed = settings.get<uint8_t>(KEY_LED_SPEED, 10);
     brightness = settings.get<uint8_t>(KEY_LED_BRIGHTNESS, 50);
-    mode = 255;   // после включения лента всегда погашена — режим из NVS намеренно не восстанавливаем
     save_mode = settings.get<uint8_t>(KEY_LED_SAVE_MODE, 0);
+    // режим восстанавливаем только при save_mode: автоматика в NVS не пишет,
+    // поэтому там лежит последний ручной режим
+    mode = save_mode ? settings.get<uint8_t>(KEY_LED_MODE, 255) : 255;
     uint8_t m = settings.get<uint8_t>(KEY_LED_MODEL, (uint8_t)LED_MODEL_WS2812);
     uint8_t f = settings.get<uint8_t>(KEY_LED_PIXEL_FORMAT, (uint8_t)LED_PIXEL_FORMAT_GRB);
     model = (m == LED_MODEL_WS2815) ? LED_MODEL_WS2815 : LED_MODEL_WS2812;
@@ -104,6 +109,11 @@ bool led::init()
 bool led::update_led_count(uint16_t new_led_count)
 {
   if (new_led_count == 0) return false;
+
+  // то же количество — не пересоздаём ленту и не пишем в NVS.
+  // requested_count проверяем отдельно: в очереди может уже лежать другое
+  // значение, которое задача Led ещё не применила
+  if (new_led_count == led_count && requested_count.load() == 0) return true;
 
   if (!settings.set(KEY_LED_COUNT, new_led_count, true)) {
     ESP_LOGE(TAG, "Ошибка сохранения количества светодиодов");
@@ -190,7 +200,7 @@ void led::off(void)
   led_strip_clear(led_strip);
 }
 
-void led::update_field(uint8_t &field, uint8_t new_value, const char *log_name, const char *key, bool &need_commit)
+void led::update_field(uint8_t &field, uint8_t new_value, const char *log_name, const char *key, bool persist, bool &need_commit)
 {
   if (field == new_value) {
     ESP_LOGW(TAG, "%s тот же: %d", log_name, field);
@@ -200,7 +210,7 @@ void led::update_field(uint8_t &field, uint8_t new_value, const char *log_name, 
   ESP_LOGI(TAG, "Установка %s: %d", log_name, new_value);
   field = new_value;
 
-  if (!save_mode) return;
+  if (!persist || !save_mode) return;
 
   if (settings.set(key, new_value)) {
     need_commit = true;
@@ -209,7 +219,7 @@ void led::update_field(uint8_t &field, uint8_t new_value, const char *log_name, 
   }
 }
 
-void led::set_state(uint8_t _r, uint8_t _g, uint8_t _b, uint8_t _mode, uint8_t _speed, uint8_t _brightness)
+void led::set_state(uint8_t _r, uint8_t _g, uint8_t _b, uint8_t _mode, uint8_t _speed, uint8_t _brightness, bool persist)
 {
   if (xSemaphoreTake(mutex, pdMS_TO_TICKS(3000)) != pdTRUE) {
     ESP_LOGE(TAG, "Не удалось захватить мьютекс");
@@ -217,19 +227,19 @@ void led::set_state(uint8_t _r, uint8_t _g, uint8_t _b, uint8_t _mode, uint8_t _
   }
 
   bool need_commit = false;
-  update_field(r, _r, "Красный канал", KEY_LED_COLOR_R, need_commit);
-  update_field(g, _g, "Зеленый канал", KEY_LED_COLOR_G, need_commit);
-  update_field(b, _b, "Синий канал", KEY_LED_COLOR_B, need_commit);
-  update_field(mode, _mode, "Режим", KEY_LED_MODE, need_commit);
+  update_field(r, _r, "Красный канал", KEY_LED_COLOR_R, persist, need_commit);
+  update_field(g, _g, "Зеленый канал", KEY_LED_COLOR_G, persist, need_commit);
+  update_field(b, _b, "Синий канал", KEY_LED_COLOR_B, persist, need_commit);
+  update_field(mode, _mode, "Режим", KEY_LED_MODE, persist, need_commit);
 
   if (_speed <= 100) {
-    update_field(speed, _speed, "Скорость", KEY_LED_SPEED, need_commit);
+    update_field(speed, _speed, "Скорость", KEY_LED_SPEED, persist, need_commit);
   } else {
     ESP_LOGE(TAG, "Скорость может быть от 0 до 100, передано как %d", _speed);
   }
 
   if (_brightness <= 100) {
-    update_field(brightness, _brightness, "Яркость", KEY_LED_BRIGHTNESS, need_commit);
+    update_field(brightness, _brightness, "Яркость", KEY_LED_BRIGHTNESS, persist, need_commit);
   } else {
     ESP_LOGE(TAG, "Яркость может быть от 0 до 100, передано как %d", _brightness);
   }

@@ -135,12 +135,13 @@
   .sw span::after { content: ''; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: .2s; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
   .sw input:checked + span { background: linear-gradient(135deg, var(--a1), var(--a2)); }
   .sw input:checked + span::after { transform: translateX(18px); }
-  .swrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 0; }
+  .swrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 0; cursor: pointer; }
   .swrow b { font-weight: 550; }
 
   .seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--bg); border: 1px solid var(--line-2); border-radius: 11px; }
   .seg button { border: none; background: none; color: var(--muted); font: inherit; font-weight: 550; padding: 6px 14px; border-radius: 8px; cursor: pointer; }
   .seg button.active { background: var(--surface-3); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+  .mode-row .seg { flex: none; }
 
   .badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 20px;
            background: var(--surface-3); color: var(--muted); white-space: nowrap; }
@@ -390,6 +391,9 @@
     .card-h.stack { flex-direction: column; align-items: stretch; }
     .card-h.stack .seg { display: flex; }
     .card-h.stack .seg button { flex: 1; }
+    .mode-row { flex-wrap: wrap; }
+    .mode-row .seg { display: flex; width: 100%; }
+    .mode-row .seg button { flex: 1; }
     .console { grid-template-columns: auto 1fr; }
     .console button { grid-column: 1 / -1; }
   }
@@ -638,10 +642,24 @@
       <label class="f"><span>Светодиодов</span><input type="number" id="ledCount" min="1"></label>
       <label class="f"><span>Тип ленты</span><select id="ledModel"><option value="ws2812">WS2812 (5 В)</option><option value="ws2815">WS2815 (12 В)</option></select></label>
       <label class="f"><span>Порядок цветов</span><select id="ledPxFmt"><option value="grb">GRB</option><option value="rgb">RGB</option></select></label>
-      <div class="swrow"><span><b>Запоминать состояние</b><br><span class="muted small">save_mode — после перезагрузки лента вернётся в последний режим</span></span><span class="sw"><input type="checkbox" id="ledSave"><span></span></span></div>
+      <div class="swrow mode-row"><span><b>Режим при старте</b><br><span class="muted small">автоматика или ручной; хранится в NVS, применяется сразу и после перезагрузки</span></span><span class="seg" id="modeSeg"><button type="button" data-manual="0">Автоматика</button><button type="button" data-manual="1">Ручной</button></span></div>
+      <label class="swrow"><span><b>Запоминать состояние</b><br><span class="muted small">save_mode — разрешить сохранение ручного состояния; включается запись при следующем изменении, автоматика не запоминается</span></span><span class="sw"><input type="checkbox" id="ledSave"><span></span></span></label>
       <div class="row between mt"><span></span><button class="btn primary" onclick="applySettings()"><i data-ic="check"></i>Сохранить</button></div>
     </div>
-    <div class="card danger-zone">
+        <div class="card">
+      <div class="card-h"><h3>Сервер обновлений</h3></div>
+      <label class="f"><span>Адрес (IP:порт)</span><input type="text" id="otaServer" placeholder="IP:порт" autocomplete="off"></label>
+      <label class="f"><span>Токен</span><span class="pw"><input type="password" id="otaToken" placeholder="до 32 символов" autocomplete="new-password"><button class="btn icon" onclick="togglePw('otaToken', this)" title="Показать"><i data-ic="eye"></i></button></span></label>
+      <div class="row between mt">
+        <span class="muted small" id="otaChk"></span>
+        <span class="row">
+          <button class="btn" onclick="checkOta()"><i data-ic="refresh"></i>Проверить обновления</button>
+          <button class="btn danger" id="otaInstallBtn" onclick="installOta()" hidden><i data-ic="send"></i><span id="otaInstallT">Обновиться</span></button>
+          <button class="btn primary" onclick="saveOtaConfig()"><i data-ic="check"></i>Сохранить</button>
+        </span>
+      </div>
+    </div>
+<div class="card danger-zone">
       <div class="card-h"><h3>Обновление прошивки</h3><span class="badge acc" id="otaVer"></span></div>
       <label class="file-pick">
         <input type="file" id="otaFile" accept=".bin,application/octet-stream">
@@ -958,6 +976,12 @@ function hasAutomations() {
   return !!(lastState && (lastState.button || lastState.light_sensor || lastState.schedule || lastState.motion)) || !!(cfgOrig && (cfgOrig.button || cfgOrig.light_sensor || cfgOrig.schedule || cfgOrig.motion));
 }
 
+function renderModeChoice() {
+  if (!ledInfo || !$('modeSeg')) return;
+  const manual = !!ledInfo.settings.manual;
+  $$('#modeSeg [data-manual]').forEach(b => b.classList.toggle('active', (b.dataset.manual === '1') === manual));
+}
+
 let modeGridSig = '';
 function renderLed() {
   if (!ledInfo) return;
@@ -985,6 +1009,7 @@ function renderLed() {
   setVal($('ledBright'), s.brightness); $('ledBrightV').textContent = s.brightness + '%';
   setVal($('ledSpeed'), s.speed); $('ledSpeedV').textContent = s.speed + '%';
   $('ledPowerT').textContent = s.mode === 255 ? 'Включить' : 'Выключить';
+  renderModeChoice();
   buildStrip();
 }
 
@@ -1075,6 +1100,14 @@ async function setManual(on) {
   await loadState();
   if (cfgOrig) updateAuto();
 }
+
+$('modeSeg').addEventListener('click', e => {
+  const b = e.target.closest('[data-manual]');
+  if (!b) return;
+  const on = b.dataset.manual === '1';
+  if (ledInfo && !!ledInfo.settings.manual === on) return;
+  setManual(on);
+});
 
 // ---------- попиксельно ----------
 const PX_MAX = 300, PX_CHUNK = 160;   // ~45 байт на пиксель, тело запроса на устройстве < 8 КБ
@@ -1275,6 +1308,55 @@ function renderSys() {
     setVal($('ledModel'), ledInfo.settings.led_model || 'ws2812');
     setVal($('ledPxFmt'), ledInfo.settings.pixel_format || 'grb');
     if (document.activeElement !== $('ledSave')) $('ledSave').checked = !!ledInfo.settings.save_mode;
+    renderModeChoice();
+  }
+}
+
+async function loadOtaConfig() {
+  const r = await api('GET', '/api/ota/config');
+  if (!r.data) return;
+  $('otaServer').value = r.data.server || '';
+  $('otaToken').value = r.data.token || '';
+}
+
+async function saveOtaConfig() {
+  const server = $('otaServer').value.trim();
+  const token = $('otaToken').value.trim();
+  if (!/^[A-Za-z0-9._-]+(:\d{1,5})?$/.test(server)) return toast('Неверный адрес: нужен IP или IP:порт', 'err');
+  if (token.length > 32) return toast('Токен не длиннее 32 символов', 'err');
+  const r = await api('POST', '/api/ota/config', { server, token });
+  if (r.ok) toast('Настройки OTA сохранены');
+  else toast('Ошибка: ' + errText(r), 'err');
+}
+
+async function checkOta() {
+  const r = await api('GET', '/api/ota/check', undefined, 15000);
+  if (!r.ok) {
+    $('otaInstallBtn').hidden = true;
+    $('otaChk').textContent = 'Ошибка проверки';
+    return toast('Ошибка проверки: ' + errText(r), 'err');
+  }
+  const d = r.data || {};
+  if (d.update) {
+    $('otaChk').textContent = 'Доступна версия ' + (d.version || '?');
+    $('otaInstallT').textContent = 'Обновиться до ' + (d.version || '?');
+    $('otaInstallBtn').hidden = false;
+    toast('Доступна версия ' + (d.version || '?'));
+  } else {
+    $('otaChk').textContent = 'Обновлений нет';
+    $('otaInstallBtn').hidden = true;
+    toast('Обновлений нет');
+  }
+}
+
+async function installOta() {
+  const r = await api('POST', '/api/ota/install');
+  if (r.ok) {
+    $('otaChk').textContent = 'Обновление запущено (мок)';
+    toast('Обновление запущено');
+  } else {
+    $('otaChk').textContent = 'Ошибка запуска обновления';
+    toast('Ошибка: ' + errText(r), 'err');
   }
 }
 
@@ -2300,6 +2382,7 @@ function route() {
   document.title = 'WebLed · ' + document.querySelector(`[data-nav=${page}] span`).textContent;
   window.scrollTo(0, 0);
   paintAll();
+  if (page === 'sys' && booted) loadOtaConfig();
   if (page === 'fx' && booted && !files) loadFiles().then(() => { if (!fxCurrent) newFile(); });
 }
 window.addEventListener('hashchange', route);
@@ -2310,6 +2393,7 @@ async function boot() {
   await loadLed();
   await loadState();
   await loadInfo();
+  await loadOtaConfig();
   await loadConfig();
   await loadNet();
   booted = true;

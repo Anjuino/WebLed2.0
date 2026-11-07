@@ -2,42 +2,52 @@ name: Build ESP32 WebLed2.0
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      full_clean:
+        description: "Выполнить idf.py fullclean перед сборкой"
+        type: boolean
+        default: false
+
+concurrency:
+  group: esp32-build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: self-hosted
-    
+    timeout-minutes: 60
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: /home/andrey/Project/WebLed2.0
+
+    env:
+      REPO_URL: https://${{ secrets.PAT }}@github.com/Anjuino/WebLed2.0.git
+      IDF_EXPORT: /home/andrey/esp/esp-idf/export.sh
+      FW_BIN: build/WebLed2.0.bin
+
     steps:
-    - name: Update repository
-      run: |
-        cd /root/Work/WebLed2.0
-        git pull https://${{ secrets.PAT }}@github.com/Anjuino/WebLed2.0.git main
-    
-    - name: Setup ESP-IDF
-      run: |
-        source /root/esp/esp-idf/export.sh
-        echo "ESP-IDF version: $(idf.py --version)"
-    
-    - name: Clean build
-      run: |
-        cd /root/Work/WebLed2.0
-        source /root/esp/esp-idf/export.sh
-        idf.py fullclean
-    
-    - name: Build firmware
-      run: |
-        cd /root/Work/WebLed2.0
-        source /root/esp/esp-idf/export.sh
-        idf.py build
-    
-    - name: Check firmware
-      run: |
-        if [ -f "/root/Work/WebLed2.0/build/WebLed2.0.bin" ]; then
+      - name: Update repository
+        run: |
+          git fetch "$REPO_URL" main
+          git reset --hard FETCH_HEAD
+
+      - name: Build firmware
+        run: |
+          source "$IDF_EXPORT"
+          echo "ESP-IDF version: $(idf.py --version)"
+
+          if [ "${{ inputs.full_clean }}" = "true" ]; then
+            idf.py fullclean
+          fi
+
+          idf.py build
+
+      - name: Check firmware
+        run: |
+          test -f "$FW_BIN"
           echo "✅ Firmware built successfully!"
-          ls -lh /root/Work/WebLed2.0/build/WebLed2.0.bin
-        else
-          echo "❌ Firmware not found!"
-          exit 1
-        fi
+          ls -lh "$FW_BIN"

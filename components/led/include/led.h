@@ -73,7 +73,7 @@ class led {
 
       const LedEffect *find_effect(uint8_t id) const;
 
-      void update_field(uint8_t &field, uint8_t new_value, const char *log_name, const char *key, bool &need_commit);
+      void update_field(uint8_t &field, uint8_t new_value, const char *log_name, const char *key, bool persist, bool &need_commit);
 
   public:
 
@@ -95,12 +95,14 @@ class led {
     void set_save_mode(bool new_save_mode, bool persist = true);
     bool get_save_mode() { return save_mode;};
     bool read_save_mode_from_nvs() { return settings.get<uint8_t>(KEY_LED_SAVE_MODE, 0) != 0; };
-    void set_mode(uint8_t new_mode) { set_state(this->r, this->g, this->b, new_mode, this->speed, this->brightness); };
-    void set_color(uint8_t new_r, uint8_t new_g, uint8_t new_b) { set_state(new_r, new_g, new_b, this->mode, this->speed, this->brightness); };
-    void set_brightness(uint8_t new_brightness) { set_state(this->r, this->g, this->b, this->mode, this->speed, new_brightness); };
-    void set_speed(uint8_t new_speed) { set_state(this->r, this->g, this->b, this->mode, new_speed, this->brightness); };
+    void set_mode(uint8_t new_mode, bool persist = false) { set_state(this->r, this->g, this->b, new_mode, this->speed, this->brightness, persist); };
+    void set_color(uint8_t new_r, uint8_t new_g, uint8_t new_b, bool persist = false) { set_state(new_r, new_g, new_b, this->mode, this->speed, this->brightness, persist); };
+    void set_brightness(uint8_t new_brightness, bool persist = false) { set_state(this->r, this->g, this->b, this->mode, this->speed, new_brightness, persist); };
+    void set_speed(uint8_t new_speed, bool persist = false) { set_state(this->r, this->g, this->b, this->mode, new_speed, this->brightness, persist); };
 
-    void set_state(uint8_t r, uint8_t g, uint8_t b, uint8_t mode, uint8_t speed, uint8_t brightness);
+    // persist=true — разрешить запись в NVS (только ручной путь);
+    // false (по умолчанию) — только применить состояние, автоматика в NVS не пишет
+    void set_state(uint8_t r, uint8_t g, uint8_t b, uint8_t mode, uint8_t speed, uint8_t brightness, bool persist = false);
 
     uint8_t get_speed(void) { return speed; };
     uint8_t get_brightness(void) { return brightness; };

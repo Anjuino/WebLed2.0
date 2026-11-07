@@ -7,6 +7,9 @@
 #define KEY_LIGHT_SENSOR_CONFIG "light_cfg"
 #define KEY_SCHEDULE_CONFIG "schedule_cfg"
 #define KEY_MOTION_CONFIG "motion_cfg"
+#define KEY_OTA_SERVER "ota_srv"
+#define KEY_OTA_TOKEN "ota_tok"
+#define KEY_MANUAL_MODE "manual_mode"   // 0 — автоматика, 1 — ручной режим
 
 #include <memory>
 #include "nvs_proxy.h"

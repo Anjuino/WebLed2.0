@@ -48,6 +48,8 @@ void device::add_automation(const char *key) {
 device::device() : settings(STORAGE_DEVICE, false) 
 {
   owner_mutex = xSemaphoreCreateMutex();
+  manual_active = settings.get<uint8_t>(KEY_MANUAL_MODE, 0) != 0;
+  ESP_LOGI(TAG, "Режим управления при старте: %s", manual_active ? "ручной" : "автоматика");
   t_time.sync();
   wled = new led();
   xTaskCreatePinnedToCore(led::task_entry, "Led", 6 * 1024, wled, 10, NULL, 1);
@@ -351,12 +353,14 @@ static esp_err_t api_led_control_handler(httpd_req_t *req) {
         }
       }
 
-      // один вызов: без промежуточных кадров, один лог, одна запись в NVS
-      wLed->set_state(new_r, new_g, new_b, new_mode, new_speed, new_brightness);
+      // один вызов: без промежуточных кадров, один лог, одна запись в NVS.
+      // persist=true — это ручной путь, только он может сохранять состояние
+      wLed->set_state(new_r, new_g, new_b, new_mode, new_speed, new_brightness, true);
     }
 
     cJSON *leds_arr = cJSON_GetObjectItem(root, "leds_arr");
     if(cJSON_IsArray(leds_arr) && !blocked) {
+      // попиксельное состояние в NVS не хранится, поэтому и режим 253 не сохраняем
       if(wLed->get_mode() != 253) wLed->set_mode(253);
       cJSON *item = NULL;
       cJSON_ArrayForEach(item, leds_arr) {
@@ -696,6 +700,14 @@ void device::set_manual(bool on) {
     current_owner = nullptr;
     for (auto &a : automations) a->has_saved = false;
   }
+
+  // режим управления — такая же настройка, как led_count: переживает перезагрузку
+  if (was_active != on) {
+    if (!settings.set(KEY_MANUAL_MODE, (uint8_t)on, true)) {
+      ESP_LOGE(TAG, "Не удалось сохранить режим управления");
+    }
+  }
+
   xSemaphoreGive(owner_mutex);
 
   if (on && !was_active) {
