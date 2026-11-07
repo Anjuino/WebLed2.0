@@ -39,7 +39,11 @@ jobs:
           source "$IDF_EXPORT"
           echo "ESP-IDF version: $(idf.py --version)"
 
-          if [ "${{ inputs.full_clean }}" = "true" ]; then
+          # inputs.full_clean приходит только при ручном запуске (workflow_dispatch).
+          # При push inputs пустой, поэтому fullclean не выполняется.
+          FULL_CLEAN="${{ inputs.full_clean }}"
+          if [ "${FULL_CLEAN,,}" = "true" ]; then
+            echo "Running idf.py fullclean..."
             idf.py fullclean
           fi
 
@@ -47,6 +51,23 @@ jobs:
 
       - name: Check firmware
         run: |
-          test -f "$FW_BIN"
+          if [ ! -f "$FW_BIN" ]; then
+            echo "❌ Firmware not found: $FW_BIN"
+            exit 1
+          fi
           echo "✅ Firmware built successfully!"
           ls -lh "$FW_BIN"
+
+      - name: Import firmware
+        run: |
+          cd /home/andrey/Project/webled-server/FirmwareImport
+          echo "Importing firmware into DB..."
+          dotnet run -- --repo /home/andrey/Project/WebLed2.0 --token 555707
+          echo "✅ Firmware import completed"
+
+          {
+            echo "## Firmware"
+            echo "- Build: ✅"
+            echo "- Import: ✅"
+            echo "- Binary: \`$FW_BIN\`"
+          } >> "$GITHUB_STEP_SUMMARY"
