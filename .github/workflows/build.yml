@@ -8,7 +8,7 @@ on:
       full_clean:
         description: "Выполнить idf.py fullclean перед сборкой"
         type: boolean
-        default: false
+        default: true
 
 concurrency:
   group: esp32-build-${{ github.ref }}
@@ -25,15 +25,14 @@ jobs:
         working-directory: /home/andrey/Project/WebLed2.0
 
     env:
-      REPO_URL: https://${{ secrets.PAT }}@github.com/Anjuino/WebLed2.0.git
       IDF_EXPORT: /home/andrey/esp/esp-idf/export.sh
       FW_BIN: build/WebLed2.0.bin
 
     steps:
       - name: Update repository
         run: |
-          git fetch "$REPO_URL" main
-          git reset --hard FETCH_HEAD
+          git fetch https://github.com/Anjuino/WebLed2.0.git main
+          git checkout -f -B main FETCH_HEAD
 
       - name: Build firmware
         run: |
