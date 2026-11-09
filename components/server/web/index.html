@@ -1936,6 +1936,7 @@ async function saveAuth() {
 }
 
 async function loadOtaConfig() {
+  $('otaChk').textContent = '';
   const r = await api('GET', '/api/ota/config');
   if (!r.data) return;
   $('otaServer').value = r.data.server || '';
@@ -2004,7 +2005,6 @@ async function installOta() {
 
   otaBusy = true;
   $('otaInstallBtn').hidden = true;
-  $('otaChk').textContent = 'Загрузка прошивки...';
 
   $('otaOvBar').style.width = '0';
   $('otaOvText').textContent = 'Загрузка прошивки с сервера...';
@@ -2026,7 +2026,6 @@ async function installOta() {
       otaBusy = false;
       $('otaOverlay').hidden = true;
       $('otaInstallBtn').hidden = false;
-      $('otaChk').textContent = 'Ошибка обновления';
       toast('Ошибка обновления: ' + d.error, 'err');
       return;
     }
@@ -2035,7 +2034,6 @@ async function installOta() {
       last = Math.max(0, Math.min(100, d.progress));
       $('otaOvBar').style.width = last + '%';
       $('otaOvPct').textContent = last + '%';
-      $('otaChk').textContent = 'Загрузка прошивки: ' + last + '%';
       $('otaOvText').textContent = last >= 100
         ? 'Прошивка загружена, идёт проверка и перезагрузка...'
         : 'Загрузка прошивки с сервера...';

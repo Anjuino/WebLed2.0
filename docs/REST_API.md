@@ -58,7 +58,11 @@ Insomnia, Swagger Editor.
 | POST   | `/api/file`                | Сохранить и скомпилировать скрипт |
 | DELETE | `/api/file?name=<name>`    | Удалить файл |
 | POST   | `/api/ota/local-upload`    | Залить прошивку (тело — сырой `.bin`) |
-| POST   | `/api/ota/remote-upload`   | Фоновое скачивание прошивки с удалённого сервера |
+| GET    | `/api/ota/config`          | Адрес сервера обновлений и токен |
+| POST   | `/api/ota/config`          | Сохранить адрес сервера и токен |
+| GET    | `/api/ota/check`           | Проверить наличие обновления на сервере |
+| POST   | `/api/ota/install`         | Скачать и установить обновление |
+| GET    | `/api/ota/status`          | Прогресс обновления |
 
 ### `GET /api/auth`
 
@@ -607,6 +611,8 @@ PIR-датчик (пин и полярность — константы в `i_mo
 
 Тело — сырой `.bin`, `Content-Length` обязателен.
 
+На время записи лента гасится (OTA-режим), при ошибке снова включается.
+
 | Код | Тело |
 |-----|------|
 | 200 | `{"success": true, "message": "OTA update successful"}`, ребут через ~2 с |
@@ -620,25 +626,90 @@ curl -X POST http://192.168.0.50/api/ota/local-upload \
 
 ---
 
-## `POST /api/ota/remote-upload`
+## `GET /api/ota/config`
 
-Запускает фоновую задачу скачивания прошивки с `OTA_REMOTE_URL` (`components/server/src/ota.cpp`).
-Тело игнорируется, ответ приходит сразу.
+Возвращает адрес сервера обновлений и токен проекта, сохранённые в NVS.
 
-| Тело (всегда 200) |
-|-------------------|
-| `{"started": true,  "message": "OTA fetch started in background"}` |
-| `{"started": false, "error": "OTA already in progress"}` |
-| `{"started": false, "error": "Failed to start OTA task"}` |
+| Код | Ответ |
+|-----|-------|
+| 200 | `{"server": "203.0.113.5:3000", "token": "9f3ac1b7d2e84a05"}` |
 
-Дальше ESP: GET `OTA_REMOTE_URL?current=<версия>&chipid=<MAC>` → запись в OTA-партицию →
-`POST OTA_ACK_URL` с `{"status":"installed"|"failed", ...}` → при успехе ребут через 3 с.
+---
 
-```c
-#define OTA_REMOTE_URL  "https://192.168.0.113:5000/getfirmware"
-#define OTA_ACK_URL     "https://192.168.0.113:5000/ack"
-// версия — firmware_version() из components/device_manager/include/version.h, например "1.0.0.30"
+## `POST /api/ota/config`
+
+Сохраняет адрес сервера и токен в NVS. Перезагрузка не выполняется.
+
+```json
+{ "server": "203.0.113.5:3000", "token": "9f3ac1b7d2e84a05" }
 ```
+
+- `server` — только `host[:port]`, без схемы. `https://` подставляется кодом автоматически,
+  адрес с `://` отклоняется;
+- `token` — до 32 печатных символов, может быть пустым.
+
+| Код | Ответ |
+|-----|-------|
+| 200 | `{"status": true}` |
+| 200 | `{"status": false, "error": "invalid server address"}` |
+| 200 | `{"status": false, "error": "invalid token (max 32 printable chars)"}` |
+
+---
+
+## `GET /api/ota/check`
+
+Проверяет наличие обновления на внешнем сервере. Ничего не скачивает.
+
+ESP сам обращается к серверу:
+
+```
+GET https://<server>/api/firmware/check
+X-Device-UID: <MAC>
+X-Device-Version: <текущая версия>
+X-Device-Token: <токен>
+X-Device-SN: <серийный номер>
+```
+
+Ответ сервера отдаётся в UI как есть. ESP запоминает `update`, `version` и `size`
+для последующего `install`.
+
+| Код | Ответ |
+|-----|-------|
+| 200 | `{"update": true, "version": "1.0.1.99", "size": 1194416}` |
+| 200 | `{"update": false}` |
+| 200 | `{"status": false, "error": "OTA server not configured"}` |
+
+---
+
+## `POST /api/ota/install`
+
+Запускает скачивание и установку прошивки, разрешённой последним `check`.
+
+- без успешного `check` (`update: true`) не запускается;
+- скачивает `https://<server>/api/firmware/download?version=<версия из check>`
+  с теми же заголовками устройства;
+- на всё время обновления лента гасится (OTA-режим), при ошибке возвращается;
+- при успехе устройство перезагружается.
+
+| Код | Ответ |
+|-----|-------|
+| 200 | `{"started": true, "message": "OTA download started"}` |
+| 200 | `{"started": false, "error": "no update available, run check first"}` |
+| 200 | `{"started": false, "error": "OTA already in progress"}` |
+
+---
+
+## `GET /api/ota/status`
+
+Текущий прогресс обновления.
+
+| Код | Ответ |
+|-----|-------|
+| 200 | `{"in_progress": true, "progress": 37}` |
+| 200 | `{"in_progress": false, "progress": 100}` |
+| 200 | `{"in_progress": false, "progress": -1, "error": "ESP_ERR_NOT_FOUND"}` |
+
+`progress`: `-1` — обновление не идёт, `0..100` — процент байт, записанных во флеш.
 
 ---
 

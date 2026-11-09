@@ -27,6 +27,7 @@ class OtaManager {
     std::atomic<int> m_progress{-1};
     std::mutex m_status_mutex;
     std::string m_last_error;
+    std::string m_install_version;
 
     led *m_led = nullptr;
 
@@ -44,6 +45,9 @@ class OtaManager {
     void set_progress(int v) { m_progress.store(v); }
 
     void set_led(led *l) { m_led = l; }
+
+    void set_install_version(const std::string &v);
+    std::string install_version();
 
     // Начало любого обновления (remote/local): гасим ленту и помечаем процесс.
     void begin_update();

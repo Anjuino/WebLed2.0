@@ -8,7 +8,6 @@
 #include "cJSON.h"
 #include <string.h>
 #include <stdlib.h>
-#include <new>
 #include "private.h"
 #include "version.h"
 #include "device.h"
@@ -198,6 +197,16 @@ std::string OtaManager::last_error() {
   return m_last_error;
 }
 
+void OtaManager::set_install_version(const std::string &v) {
+  std::lock_guard<std::mutex> lock(m_status_mutex);
+  m_install_version = v;
+}
+
+std::string OtaManager::install_version() {
+  std::lock_guard<std::mutex> lock(m_status_mutex);
+  return m_install_version;
+}
+
 void OtaManager::begin_update() {
   if (m_led) m_led->suspend();
   set_error("");
@@ -335,16 +344,16 @@ static esp_err_t local_ota_upload_handler(httpd_req_t *req) {
   return ret;
 }
 
-struct OtaInstallCtx {
-  OtaManager *ota;
-  std::string version;
-};
-
 static void ota_install_task(void *arg) {
-  OtaInstallCtx *ctx = (OtaInstallCtx *)arg;
-  OtaManager *ota = ctx->ota;
-  std::string version = ctx->version;
-  delete ctx;
+  OtaManager *ota = (OtaManager *)arg;
+  std::string version = ota->install_version();
+
+  if (version.empty()) {
+    ota->set_error("empty install version");
+    ota->end_update(false);
+    vTaskDelete(NULL);
+    return;
+  }
 
   std::string url = ota->base_url() + OTA_PATH_DOWNLOAD + "?version=" + version;
 
@@ -537,18 +546,15 @@ static esp_err_t ota_install_handler(httpd_req_t *req) {
     return send_json_status(req, "started", false, "error", "update version is empty");
   }
 
-  OtaInstallCtx *ctx = new (std::nothrow) OtaInstallCtx{ota, version};
-  if (!ctx) {
-    return send_json_status(req, "started", false, "error", "OOM");
-  }
+  // Версия установки хранится в OtaManager: одновременно идёт только одно обновление.
+  ota->set_install_version(version);
 
   // Результат проверки остаётся до следующего check: при ошибке можно повторить.
   ota->begin_update();
 
-  BaseType_t ok = xTaskCreate(ota_install_task, "ota_install", 12 * 1024, ctx, 8, NULL);
+  BaseType_t ok = xTaskCreate(ota_install_task, "ota_install", 12 * 1024, ota, 8, NULL);
   if (ok != pdPASS) {
     ota->end_update(false);
-    delete ctx;
     return send_json_status(req, "started", false, "error", "failed to start OTA task");
   }
 

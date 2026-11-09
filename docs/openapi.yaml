@@ -507,18 +507,82 @@ paths:
           description: "`OTA failed` / `OTA context null`"
           content: { text/plain: { schema: { type: string } } }
 
-  /api/ota/remote-upload:
-    post:
-      operationId: otaRemoteUpload
+  /api/ota/config:
+    get:
+      operationId: otaConfigGet
       tags: [ota]
-      summary: Скачать прошивку с удалённого сервера (в фоне)
-      description: |
-        Ответ сразу. Дальше устройство: GET `OTA_REMOTE_URL?current=<версия>&chipid=<MAC>` →
-        запись в OTA-раздел → POST `OTA_ACK_URL` (`installed`/`failed`) → при успехе перезагрузка через 3 с.
-        URL — в `components/server/src/ota.cpp`. Тело запроса игнорируется.
+      summary: Адрес сервера обновлений и токен
       responses:
         "200":
-          description: Всегда 200, результат запуска в теле
+          description: Текущие настройки
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  server: { type: string, example: "203.0.113.5:3000" }
+                  token:  { type: string, example: "9f3ac1b7d2e84a05" }
+    post:
+      operationId: otaConfigSet
+      tags: [ota]
+      summary: Сохранить адрес сервера и токен
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                server: { type: string, example: "203.0.113.5:3000" }
+                token:  { type: string, example: "9f3ac1b7d2e84a05" }
+      responses:
+        "200":
+          description: Результат сохранения
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/StatusOk"
+                  - $ref: "#/components/schemas/StatusError"
+
+  /api/ota/check:
+    get:
+      operationId: otaCheck
+      tags: [ota]
+      summary: Проверить обновление на сервере
+      description: |
+        ESP сам обращается к внешнему серверу обновлений. Ответ сервера передаётся в UI как есть,
+        ESP запоминает update/version/size для последующей установки.
+      responses:
+        "200":
+          description: Ответ сервера обновлений (или ошибка ESP)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  update:  { type: boolean }
+                  version: { type: string }
+                  size:    { type: integer, format: int64 }
+                  status:  { type: boolean }
+                  error:   { type: string }
+              examples:
+                update: { value: { update: true, version: "1.0.1.99", size: 1194416 } }
+                latest: { value: { update: false } }
+                error:  { value: { status: false, error: "OTA server not configured" } }
+
+  /api/ota/install:
+    post:
+      operationId: otaInstall
+      tags: [ota]
+      summary: Скачать и установить разрешённое обновление
+      description: |
+        Требует успешного check. Скачивает прошивку с
+        `https://<server>/api/firmware/download?version=...` с заголовками устройства.
+        На время обновления лента гасится (OTA-режим), при ошибке возвращается; по успеху — перезагрузка.
+      responses:
+        "200":
+          description: Результат запуска
           content:
             application/json:
               schema:
@@ -526,11 +590,32 @@ paths:
                 properties:
                   started: { type: boolean }
                   message: { type: string }
-                  error: { type: string }
+                  error:   { type: string }
               examples:
-                started: { value: { started: true, message: "OTA fetch started in background" } }
+                started: { value: { started: true, message: "OTA download started" } }
+                no_update: { value: { started: false, error: "no update available, run check first" } }
                 busy: { value: { started: false, error: "OTA already in progress" } }
-                failed: { value: { started: false, error: "Failed to start OTA task" } }
+
+  /api/ota/status:
+    get:
+      operationId: otaStatus
+      tags: [ota]
+      summary: Прогресс обновления
+      responses:
+        "200":
+          description: Текущее состояние
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  in_progress: { type: boolean }
+                  progress:    { type: integer, description: "-1 — обновление не идёт, 0..100 — записано во флеш" }
+                  error:       { type: string }
+              examples:
+                running: { value: { in_progress: true, progress: 37 } }
+                done:    { value: { in_progress: false, progress: 100 } }
+                failed:  { value: { in_progress: false, progress: -1, error: "ESP_ERR_NOT_FOUND" } }
 
 components:
   securitySchemes:
