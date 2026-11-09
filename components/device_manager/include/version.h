@@ -4,7 +4,7 @@
 #define FW_VERSION_MAJOR 1
 #define FW_VERSION_MINOR 1
 #define FW_VERSION_PATCH 0
-#define FW_VERSION_BUILD 21
+#define FW_VERSION_BUILD 22
 
 #define __FW_STR_(x) #x
 #define __FW_STR(x)  __FW_STR_(x)
