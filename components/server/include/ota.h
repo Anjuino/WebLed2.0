@@ -15,12 +15,16 @@ class OtaManager {
     std::atomic<bool> m_in_progress{false};
     NVSProxy m_settings;
     std::string m_server;
-    std::string m_token;
+    std::string m_token = "None";
 
     std::mutex m_update_mutex;
     bool m_update_available = false;
     std::string m_update_version;
     size_t m_update_size = 0;
+
+    std::atomic<int> m_progress{-1};
+    std::mutex m_status_mutex;
+    std::string m_last_error;
 
     void load_config();
 
@@ -31,6 +35,12 @@ class OtaManager {
 
     bool in_progress() const { return m_in_progress.load(); }
     void set_in_progress(bool v) { m_in_progress.store(v); }
+
+    int progress() const { return m_progress.load(); }
+    void set_progress(int v) { m_progress.store(v); }
+
+    void set_error(const std::string &e);
+    std::string last_error();
 
     const std::string &server() const { return m_server; }
     const std::string &token() const { return m_token; }
@@ -48,7 +58,7 @@ class OtaManager {
                             int (*reader)(void *ctx, char *buf, int max_len),
                             void *ctx);
 
-    esp_err_t fetch_from_url(const char *url);
+    esp_err_t install_from_url(const char *url, const char *version);
 };
 
 #endif // OTA_MANAGER_H

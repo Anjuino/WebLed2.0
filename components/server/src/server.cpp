@@ -13,6 +13,7 @@
 #include <tuple>
 #include "cJSON.h"
 #include "helper_server.h"
+#include "auth.h"
 #include "script_engine.h"
 #include "sntp_time.h"
 #include "mdns.h"
@@ -41,6 +42,8 @@ static const char *index_etag() {
 }
 
 static esp_err_t index_handler(httpd_req_t *req) {
+  // Сам интерфейс отдаём без Basic-запроса: страница сама показывает форму входа.
+  // Все /api/* по-прежнему защищены.
   const char *etag = index_etag();
 
   char inm[64];
@@ -137,7 +140,7 @@ esp_err_t server::start() {
   ssl_config.httpd.task_priority = 10;
   ssl_config.httpd.max_open_sockets = 6;
   ssl_config.httpd.stack_size = 15 * 1024;
-  ssl_config.httpd.max_uri_handlers = 16;
+  ssl_config.httpd.max_uri_handlers = 24;
   ssl_config.httpd.lru_purge_enable = true;
   esp_err_t err = httpd_ssl_start(&m_server, &ssl_config);
 #else
@@ -171,6 +174,8 @@ esp_err_t server::start() {
       return err;
   }
 
+  auth_init();
+
   httpd_uri_t index_uri = {
     .uri = "/",
     .method = HTTP_GET,
@@ -182,6 +187,7 @@ esp_err_t server::start() {
   m_ota.register_handlers(m_server);
   wifi->register_handlers(m_server);
   controller->register_handlers(m_server);
+  controller->t_time.sync();
 
   esp_err_t mdns_err = mdns_init();
   if (mdns_err != ESP_OK) {

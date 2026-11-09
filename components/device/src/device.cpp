@@ -1,4 +1,5 @@
 #include "device.h"
+#include "auth.h"
 #include "version.h"
 #include "i_button.h"
 #include "i_light_sensor.h"
@@ -50,7 +51,6 @@ device::device() : settings(STORAGE_DEVICE, false)
   owner_mutex = xSemaphoreCreateMutex();
   manual_active = settings.get<uint8_t>(KEY_MANUAL_MODE, 0) != 0;
   ESP_LOGI(TAG, "Режим управления при старте: %s", manual_active ? "ручной" : "автоматика");
-  t_time.sync();
   wled = new led();
   xTaskCreatePinnedToCore(led::task_entry, "Led", 6 * 1024, wled, 10, NULL, 1);
   xTaskCreatePinnedToCore(memory_task, "WatchDevice", 4 * 1024, NULL, 2, NULL, 1);
@@ -61,8 +61,6 @@ device::device() : settings(STORAGE_DEVICE, false)
   add_automation<i_button>(KEY_BUTTON_CONFIG);
   add_automation<i_light_sensor>(KEY_LIGHT_SENSOR_CONFIG);
   add_automation<i_schedule>(KEY_SCHEDULE_CONFIG);
-  // движение — строго после света: ему нужно найти i_light_sensor в списке, иначе оно заведёт
-  // свой драйвер света, а второй раз тот же ADC инициализировать нельзя
   add_automation<i_motion>(KEY_MOTION_CONFIG);
 }
 
@@ -72,6 +70,7 @@ device::~device()
 }
 
 static esp_err_t api_device_handler_post(httpd_req_t *req) {
+  if (!auth_check(req)) return ESP_OK;
   device *contorller = (device*)req->user_ctx;
   char *buf = nullptr;
   if(getjson(req, &buf) == ESP_OK) {
@@ -131,6 +130,7 @@ static esp_err_t api_device_handler_post(httpd_req_t *req) {
 }
 
 static esp_err_t api_device_handler_get(httpd_req_t *req) {
+  if (!auth_check(req)) return ESP_OK;
   device *contorller = (device*)req->user_ctx;
   cJSON *root = cJSON_CreateObject();
   if(!root) return send_resp_json(NULL, req);
@@ -201,6 +201,7 @@ static esp_err_t api_device_handler_get(httpd_req_t *req) {
 }
 
 static esp_err_t api_led_info_handler(httpd_req_t *req) {
+  if (!auth_check(req)) return ESP_OK;
   device *controller = (device*)req->user_ctx;
   led *wLed = controller->get_led();
   cJSON *root = cJSON_CreateObject();
@@ -264,6 +265,7 @@ static esp_err_t api_led_info_handler(httpd_req_t *req) {
 }
 
 static esp_err_t api_led_control_handler(httpd_req_t *req) {
+  if (!auth_check(req)) return ESP_OK;
   device *controller = (device*)req->user_ctx;
   led *wLed = controller->get_led();
 
@@ -395,6 +397,7 @@ static esp_err_t api_led_control_handler(httpd_req_t *req) {
 }
 
 static esp_err_t f_file_get(httpd_req_t *req) {
+  if (!auth_check(req)) return ESP_OK;
   ESP_LOGI(TAG, "Запрос пришел get");
   device *controller = (device*)req->user_ctx;
   FileSystem *fs = controller->get_fs();
@@ -460,6 +463,7 @@ static esp_err_t f_file_get(httpd_req_t *req) {
 }
 
 static esp_err_t f_file_create(httpd_req_t *req) {
+  if (!auth_check(req)) return ESP_OK;
   ESP_LOGI(TAG, "Запрос пришел create file");
   device *controller = (device*)req->user_ctx;
   FileSystem *fs = controller->get_fs();
@@ -518,6 +522,7 @@ static esp_err_t f_file_create(httpd_req_t *req) {
 }
 
 static esp_err_t f_file_delete(httpd_req_t *req) {
+  if (!auth_check(req)) return ESP_OK;
   ESP_LOGI(TAG, "Запрос пришел delete file");
   device *controller = (device*)req->user_ctx;
   FileSystem *fs = controller->get_fs();
@@ -535,6 +540,94 @@ static esp_err_t f_file_delete(httpd_req_t *req) {
   }
   httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Query param is missing");
   return ESP_FAIL;
+}
+
+static esp_err_t api_auth_handler_get(httpd_req_t *req) {
+  if (!auth_check(req)) return ESP_OK;
+
+  std::string user;
+  if (!auth_get_user(user)) {
+    return send_json_status(req, "status", false, "error", "auth unavailable");
+  }
+
+  cJSON *root = cJSON_CreateObject();
+  if (!root) return send_json_status(req, "status", false, "error", "OOM");
+  cJSON_AddStringToObject(root, "user", user.c_str());
+  return send_resp_json(root, req);
+}
+
+static esp_err_t api_auth_handler_post(httpd_req_t *req) {
+  if (!auth_check(req)) return ESP_OK;
+
+  char *buf = nullptr;
+  if (getjson(req, &buf) != ESP_OK) return ESP_FAIL;
+
+  cJSON *root = cJSON_Parse(buf);
+  free(buf);
+  if (!root) {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+    return ESP_FAIL;
+  }
+
+  cJSON *j_user = cJSON_GetObjectItem(root, "user");
+  cJSON *j_pass = cJSON_GetObjectItem(root, "pass");
+
+  if (!cJSON_IsString(j_user)) {
+    cJSON_Delete(root);
+    return send_json_status(req, "status", false, "error", "user required");
+  }
+
+  const char *pass = cJSON_IsString(j_pass) ? j_pass->valuestring : nullptr;
+  const char *err = nullptr;
+  bool ok = auth_set_credentials(j_user->valuestring, pass, &err);
+  cJSON_Delete(root);
+
+  if (!ok) {
+    return send_json_status(req, "status", false, "error", err ? err : "auth update failed");
+  }
+  return send_json_status(req, "status", true, nullptr, nullptr);
+}
+
+static esp_err_t api_time_handler_get(httpd_req_t *req) {
+  if (!auth_check(req)) return ESP_OK;
+  device *controller = (device*)req->user_ctx;
+
+  cJSON *root = cJSON_CreateObject();
+  if (!root) return send_json_status(req, "status", false, "error", "OOM");
+  cJSON_AddNumberToObject(root, "offset_min", controller->t_time.get_offset_min());
+  cJSON_AddStringToObject(root, "time", controller->t_time.get_str_current_time().c_str());
+  return send_resp_json(root, req);
+}
+
+static esp_err_t api_time_handler_post(httpd_req_t *req) {
+  if (!auth_check(req)) return ESP_OK;
+  device *controller = (device*)req->user_ctx;
+
+  char *buf = nullptr;
+  if (getjson(req, &buf) != ESP_OK) return ESP_FAIL;
+
+  cJSON *root = cJSON_Parse(buf);
+  free(buf);
+  if (!root) {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+    return ESP_FAIL;
+  }
+
+  cJSON *j_offset = cJSON_GetObjectItem(root, "offset_min");
+  if (!cJSON_IsNumber(j_offset)) {
+    cJSON_Delete(root);
+    return send_json_status(req, "status", false, "error", "offset_min required");
+  }
+
+  int offset = j_offset->valueint;
+  bool range_ok = offset >= -12 * 60 && offset <= 14 * 60;
+  bool ok = range_ok && controller->t_time.set_offset_min((int16_t)offset);
+  cJSON_Delete(root);
+
+  if (!ok) {
+    return send_json_status(req, "status", false, "error", "invalid offset_min");
+  }
+  return send_json_status(req, "status", true, nullptr, nullptr);
 }
 
 void device::register_handlers(httpd_handle_t httpd)
@@ -594,6 +687,38 @@ void device::register_handlers(httpd_handle_t httpd)
     .user_ctx = this
   };
   httpd_register_uri_handler(httpd, &file_delete);
+
+  httpd_uri_t auth_get = {
+    .uri = "/api/auth",
+    .method = HTTP_GET,
+    .handler = api_auth_handler_get,
+    .user_ctx = this
+  };
+  httpd_register_uri_handler(httpd, &auth_get);
+
+  httpd_uri_t auth_post = {
+    .uri = "/api/auth",
+    .method = HTTP_POST,
+    .handler = api_auth_handler_post,
+    .user_ctx = this
+  };
+  httpd_register_uri_handler(httpd, &auth_post);
+
+  httpd_uri_t time_get = {
+    .uri = "/api/time",
+    .method = HTTP_GET,
+    .handler = api_time_handler_get,
+    .user_ctx = this
+  };
+  httpd_register_uri_handler(httpd, &time_get);
+
+  httpd_uri_t time_post = {
+    .uri = "/api/time",
+    .method = HTTP_POST,
+    .handler = api_time_handler_post,
+    .user_ctx = this
+  };
+  httpd_register_uri_handler(httpd, &time_post);
 }
 
 bool device::is_time_synced() {

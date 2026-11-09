@@ -7,6 +7,7 @@ idf_component_register(
         nvs_proxy
         wifi_manager
         nvs_flash
+        driver
         esp_timer
         mdns
         device)

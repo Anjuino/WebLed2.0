@@ -3,16 +3,402 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0b0e13">
+<meta name="theme-color" content="#000000">
 <title>WebLed</title>
+<script>
+try {
+  var savedTheme = localStorage.getItem('webled.theme');
+  if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+} catch (e) {}
+</script>
 <link rel="icon" href="data:,">
 <style>
-  :root {
-    --bg: #0b0e13; --surface: #12161d; --surface-2: #181d26; --surface-3: #1e2430;
-    --line: #232a35; --line-2: #2e3746; --text: #e8ebf0; --muted: #8591a3; --dim: #5d6879;
+  :root, :root[data-theme="dark"] {
+    --bg: #000000; --surface: #07080b; --surface-2: #0d0f14; --surface-3: #141820;
+    --line: #1b202a; --line-2: #262d3a; --text: #f1f4f8; --muted: #8b97a8; --dim: #5f6a7a;
     --a1: #5b8cff; --a2: #a46bff; --accent: #7b7dff;
     --ok: #34d399; --err: #f87171; --warn: #fbbf24;
+    --m-get: #7dd3fc; --m-post: #c4b5fd; --m-del: #fca5a5;
+    --primary-text: #fff;
+
+    --sidebar-bg: rgba(0, 0, 0, .92);
+    --mobile-nav-bg: rgba(0, 0, 0, .95);
+    --topbar-bg: rgba(0, 0, 0, .94);
+    --backdrop: rgba(0, 0, 0, .82);
+    --glow-1: rgba(91, 140, 255, .05);
+    --glow-2: rgba(164, 107, 255, .04);
+    --nav-active-1: rgba(91, 140, 255, .18);
+    --nav-active-2: rgba(164, 107, 255, .06);
+    --hover-border: #3a4558;
+    --focus-ring: rgba(91, 140, 255, .18);
+    --swatch-border: rgba(255, 255, 255, .15);
+    --code-bg: #000000;
+    --strip-bg: #000000;
+    --px-bg: #151a22;
+    --prev-bg: #151a22;
+    --prev-off-bg: #0a0c10;
+    --hyst-line: rgba(255, 255, 255, .08);
+    --savebar-bg: rgba(8, 9, 12, .95);
+    --toast-bg: rgba(12, 14, 18, .98);
+    --file-hover-bg: rgba(91, 140, 255, .06);
     --r: 16px;
+  }
+
+  :root[data-theme="graphite"] {
+    --bg: #14171c; --surface: #1b1f26; --surface-2: #22272f; --surface-3: #2a303a;
+    --line: #323944; --line-2: #3d4654; --text: #e8ebf0; --muted: #98a3b4; --dim: #6b7688;
+    --a1: #5b8cff; --a2: #a46bff; --accent: #7b7dff;
+    --ok: #34d399; --err: #f87171; --warn: #fbbf24;
+    --m-get: #7dd3fc; --m-post: #c4b5fd; --m-del: #fca5a5;
+
+    --sidebar-bg: rgba(20, 23, 28, .85);
+    --mobile-nav-bg: rgba(20, 23, 28, .95);
+    --topbar-bg: rgba(20, 23, 28, .92);
+    --backdrop: rgba(10, 12, 15, .7);
+    --glow-1: rgba(91, 140, 255, .08);
+    --glow-2: rgba(164, 107, 255, .06);
+    --nav-active-1: rgba(91, 140, 255, .16);
+    --nav-active-2: rgba(164, 107, 255, .06);
+    --hover-border: #4a5566;
+    --focus-ring: rgba(91, 140, 255, .18);
+    --swatch-border: rgba(255, 255, 255, .15);
+    --code-bg: #101318;
+    --strip-bg: #101318;
+    --px-bg: #252b35;
+    --prev-bg: #2a303a;
+    --prev-off-bg: #1a1f26;
+    --hyst-line: rgba(255, 255, 255, .08);
+    --savebar-bg: rgba(27, 31, 38, .94);
+    --toast-bg: rgba(34, 39, 47, .98);
+    --file-hover-bg: rgba(91, 140, 255, .05);
+  }
+
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f2f5fa; --surface: #ffffff; --surface-2: #eef2f8; --surface-3: #e2e8f2;
+    --line: #d8e0ea; --line-2: #c5d0df; --text: #172033; --muted: #5b6b82; --dim: #8593a8;
+    --a1: #3f6fe8; --a2: #7a4de8; --accent: #5a5be8;
+    --ok: #12855d; --err: #d33c3c; --warn: #a86a00;
+    --m-get: #0369a1; --m-post: #6d28d9; --m-del: #b91c1c;
+
+    --sidebar-bg: rgba(255, 255, 255, .88);
+    --mobile-nav-bg: rgba(255, 255, 255, .94);
+    --topbar-bg: rgba(255, 255, 255, .92);
+    --backdrop: rgba(23, 32, 51, .35);
+    --glow-1: rgba(63, 111, 232, .10);
+    --glow-2: rgba(122, 77, 232, .08);
+    --nav-active-1: rgba(63, 111, 232, .14);
+    --nav-active-2: rgba(122, 77, 232, .06);
+    --hover-border: #9fb0c8;
+    --focus-ring: rgba(63, 111, 232, .20);
+    --swatch-border: rgba(23, 32, 51, .2);
+    --code-bg: #f7f9fc;
+    --strip-bg: #e9eef6;
+    --px-bg: #d5deea;
+    --prev-bg: #dce4ef;
+    --prev-off-bg: #e8edf5;
+    --hyst-line: rgba(23, 32, 51, .08);
+    --savebar-bg: rgba(255, 255, 255, .94);
+    --toast-bg: rgba(255, 255, 255, .98);
+    --file-hover-bg: rgba(63, 111, 232, .06);
+  }
+
+  :root[data-theme="wine"] {
+    --bg: #160b0d; --surface: #1d0f12; --surface-2: #261418; --surface-3: #321a20;
+    --line: #3b2027; --line-2: #4a2932; --text: #f5e9ec; --muted: #b89aa2; --dim: #8a6d76;
+    --a1: #c24b60; --a2: #96324a; --accent: #b14258;
+    --ok: #6fbf8f; --err: #e06b6b; --warn: #e0a64a;
+    --m-get: #7dd3fc; --m-post: #d8b4fe; --m-del: #fca5a5;
+
+    --sidebar-bg: rgba(22, 11, 13, .9);
+    --mobile-nav-bg: rgba(22, 11, 13, .96);
+    --topbar-bg: rgba(22, 11, 13, .94);
+    --backdrop: rgba(0, 0, 0, .75);
+    --glow-1: rgba(212, 86, 106, .10);
+    --glow-2: rgba(166, 58, 88, .08);
+    --nav-active-1: rgba(212, 86, 106, .18);
+    --nav-active-2: rgba(166, 58, 88, .08);
+    --hover-border: #5a3039;
+    --focus-ring: rgba(212, 86, 106, .20);
+    --swatch-border: rgba(255, 255, 255, .15);
+    --code-bg: #12080a;
+    --strip-bg: #12080a;
+    --px-bg: #2a171c;
+    --prev-bg: #321a20;
+    --prev-off-bg: #1a0d10;
+    --hyst-line: rgba(255, 255, 255, .08);
+    --savebar-bg: rgba(29, 15, 18, .95);
+    --toast-bg: rgba(38, 20, 24, .98);
+    --file-hover-bg: rgba(212, 86, 106, .06);
+  }
+
+  :root[data-theme="sand"] {
+    color-scheme: light;
+    --bg: #f7f2e4; --surface: #fffaf0; --surface-2: #f3ead6; --surface-3: #eadfc6;
+    --line: #ddd0b5; --line-2: #cbbd9f; --text: #3a3224; --muted: #7d715c; --dim: #a3957c;
+    --a1: #9c5f12; --a2: #b07f1d; --accent: #a87520;
+    --ok: #4f7a33; --err: #b0443a; --warn: #8a5b00;
+    --m-get: #1d6b8a; --m-post: #7a4b1f; --m-del: #9e3027;
+
+    --sidebar-bg: rgba(255, 250, 240, .9);
+    --mobile-nav-bg: rgba(255, 250, 240, .96);
+    --topbar-bg: rgba(255, 250, 240, .94);
+    --backdrop: rgba(58, 50, 36, .35);
+    --glow-1: rgba(156, 95, 18, .12);
+    --glow-2: rgba(176, 127, 29, .08);
+    --nav-active-1: rgba(156, 95, 18, .16);
+    --nav-active-2: rgba(176, 127, 29, .08);
+    --hover-border: #b8a582;
+    --focus-ring: rgba(156, 95, 18, .22);
+    --swatch-border: rgba(58, 50, 36, .2);
+    --code-bg: #fbf6e9;
+    --strip-bg: #f0e6d2;
+    --px-bg: #e2d4ba;
+    --prev-bg: #eadfc6;
+    --prev-off-bg: #f1e8d7;
+    --hyst-line: rgba(58, 50, 36, .08);
+    --savebar-bg: rgba(255, 250, 240, .94);
+    --toast-bg: rgba(255, 250, 240, .98);
+    --file-hover-bg: rgba(156, 95, 18, .06);
+  }
+
+  :root[data-theme="rose"] {
+    color-scheme: light;
+    --bg: #fbf1f1; --surface: #fff8f8; --surface-2: #f7e8e8; --surface-3: #efdcdc;
+    --line: #e5cfcf; --line-2: #d6baba; --text: #3a2525; --muted: #826868; --dim: #a88d8d;
+    --a1: #b23a48; --a2: #c95a6c; --accent: #b84757;
+    --ok: #4f7a43; --err: #b33a3a; --warn: #9a6100;
+    --m-get: #1d6b8a; --m-post: #7d3b64; --m-del: #a12e2e;
+
+    --sidebar-bg: rgba(255, 248, 248, .9);
+    --mobile-nav-bg: rgba(255, 248, 248, .96);
+    --topbar-bg: rgba(255, 248, 248, .94);
+    --backdrop: rgba(58, 37, 37, .35);
+    --glow-1: rgba(178, 58, 72, .12);
+    --glow-2: rgba(201, 90, 108, .08);
+    --nav-active-1: rgba(178, 58, 72, .16);
+    --nav-active-2: rgba(201, 90, 108, .08);
+    --hover-border: #c9a6a6;
+    --focus-ring: rgba(178, 58, 72, .22);
+    --swatch-border: rgba(58, 37, 37, .2);
+    --code-bg: #fdf5f5;
+    --strip-bg: #f3e3e3;
+    --px-bg: #e5d0d0;
+    --prev-bg: #efdcdc;
+    --prev-off-bg: #f5e8e8;
+    --hyst-line: rgba(58, 37, 37, .08);
+    --savebar-bg: rgba(255, 248, 248, .94);
+    --toast-bg: rgba(255, 248, 248, .98);
+    --file-hover-bg: rgba(178, 58, 72, .06);
+  }
+
+  :root[data-theme="mint"] {
+    color-scheme: light;
+    --bg: #f0f7f1; --surface: #f8fdf9; --surface-2: #e8f3ea; --surface-3: #dcebdf;
+    --line: #cfe2d3; --line-2: #b8d1bf; --text: #20372a; --muted: #5f7a68; --dim: #88a18f;
+    --a1: #2f8a57; --a2: #3d9a63; --accent: #348f5b;
+    --ok: #2f8a57; --err: #b44a4a; --warn: #946400;
+    --m-get: #1d6b8a; --m-post: #4b6b3d; --m-del: #a12e2e;
+
+    --sidebar-bg: rgba(248, 253, 249, .9);
+    --mobile-nav-bg: rgba(248, 253, 249, .96);
+    --topbar-bg: rgba(248, 253, 249, .94);
+    --backdrop: rgba(32, 55, 42, .35);
+    --glow-1: rgba(47, 138, 87, .10);
+    --glow-2: rgba(79, 170, 114, .08);
+    --nav-active-1: rgba(47, 138, 87, .14);
+    --nav-active-2: rgba(79, 170, 114, .07);
+    --hover-border: #a8c4b0;
+    --focus-ring: rgba(47, 138, 87, .20);
+    --swatch-border: rgba(32, 55, 42, .2);
+    --code-bg: #f5fbf6;
+    --strip-bg: #e7f2e9;
+    --px-bg: #d3e5d7;
+    --prev-bg: #dcebdf;
+    --prev-off-bg: #e9f3eb;
+    --hyst-line: rgba(32, 55, 42, .08);
+    --savebar-bg: rgba(248, 253, 249, .94);
+    --toast-bg: rgba(248, 253, 249, .98);
+    --file-hover-bg: rgba(47, 138, 87, .06);
+  }
+
+  :root[data-theme="sand-dark"] {
+    --bg: #171208; --surface: #211a0d; --surface-2: #2b2212; --surface-3: #382c18;
+    --line: #46381f; --line-2: #59482a; --text: #f3ead7; --muted: #b8a98c; --dim: #8c7f68;
+    --a1: #d99a2b; --a2: #b9771f; --accent: #c98b25;
+    --ok: #6faf7a; --err: #e06b6b; --warn: #e0b04a;
+    --m-get: #7dd3fc; --m-post: #d8b4fe; --m-del: #fca5a5;
+    --primary-text: #1a1307;
+
+    --sidebar-bg: rgba(23, 18, 8, .93);
+    --mobile-nav-bg: rgba(23, 18, 8, .97);
+    --topbar-bg: rgba(23, 18, 8, .95);
+    --backdrop: rgba(0, 0, 0, .8);
+    --glow-1: rgba(217, 154, 43, .08);
+    --glow-2: rgba(185, 119, 31, .06);
+    --nav-active-1: rgba(217, 154, 43, .16);
+    --nav-active-2: rgba(185, 119, 31, .07);
+    --hover-border: #5e4a29;
+    --focus-ring: rgba(217, 154, 43, .20);
+    --swatch-border: rgba(255, 255, 255, .15);
+    --code-bg: #120e06;
+    --strip-bg: #120e06;
+    --px-bg: #2a2112;
+    --prev-bg: #382c18;
+    --prev-off-bg: #1c160b;
+    --hyst-line: rgba(255, 255, 255, .08);
+    --savebar-bg: rgba(33, 26, 13, .95);
+    --toast-bg: rgba(43, 34, 18, .98);
+    --file-hover-bg: rgba(217, 154, 43, .06);
+  }
+
+  :root[data-theme="rose-dark"] {
+    --bg: #1a0d13; --surface: #24121a; --surface-2: #301822; --surface-3: #3f2030;
+    --line: #4e2839; --line-2: #633348; --text: #f7e9ef; --muted: #c09aa9; --dim: #946f80;
+    --a1: #e06a83; --a2: #c44b63; --accent: #d65a74;
+    --ok: #6fbf8f; --err: #e06b6b; --warn: #e0a64a;
+    --m-get: #7dd3fc; --m-post: #d8b4fe; --m-del: #fca5a5;
+    --primary-text: #1a0a10;
+
+    --sidebar-bg: rgba(26, 13, 19, .92);
+    --mobile-nav-bg: rgba(26, 13, 19, .96);
+    --topbar-bg: rgba(26, 13, 19, .94);
+    --backdrop: rgba(0, 0, 0, .78);
+    --glow-1: rgba(224, 106, 131, .09);
+    --glow-2: rgba(196, 75, 99, .07);
+    --nav-active-1: rgba(224, 106, 131, .16);
+    --nav-active-2: rgba(196, 75, 99, .08);
+    --hover-border: #6b3a4d;
+    --focus-ring: rgba(224, 106, 131, .20);
+    --swatch-border: rgba(255, 255, 255, .15);
+    --code-bg: #140a0f;
+    --strip-bg: #140a0f;
+    --px-bg: #33202a;
+    --prev-bg: #3f2030;
+    --prev-off-bg: #211018;
+    --hyst-line: rgba(255, 255, 255, .08);
+    --savebar-bg: rgba(36, 18, 26, .95);
+    --toast-bg: rgba(48, 24, 34, .98);
+    --file-hover-bg: rgba(224, 106, 131, .06);
+  }
+
+  :root[data-theme="mint-dark"] {
+    --bg: #08130e; --surface: #0d1c15; --surface-2: #13261d; --surface-3: #1a3428;
+    --line: #224433; --line-2: #2d5842; --text: #e7f5ec; --muted: #91b8a3; --dim: #648c77;
+    --a1: #45c98a; --a2: #2f9e6b; --accent: #3bb47d;
+    --ok: #45c98a; --err: #e06b6b; --warn: #e0a64a;
+    --m-get: #7dd3fc; --m-post: #d8b4fe; --m-del: #fca5a5;
+    --primary-text: #06140b;
+
+    --sidebar-bg: rgba(8, 19, 14, .93);
+    --mobile-nav-bg: rgba(8, 19, 14, .97);
+    --topbar-bg: rgba(8, 19, 14, .95);
+    --backdrop: rgba(0, 0, 0, .8);
+    --glow-1: rgba(69, 201, 138, .08);
+    --glow-2: rgba(47, 158, 107, .06);
+    --nav-active-1: rgba(69, 201, 138, .15);
+    --nav-active-2: rgba(47, 158, 107, .07);
+    --hover-border: #35664d;
+    --focus-ring: rgba(69, 201, 138, .20);
+    --swatch-border: rgba(255, 255, 255, .15);
+    --code-bg: #06100b;
+    --strip-bg: #06100b;
+    --px-bg: #183327;
+    --prev-bg: #1a3428;
+    --prev-off-bg: #0d1f17;
+    --hyst-line: rgba(255, 255, 255, .08);
+    --savebar-bg: rgba(13, 28, 21, .95);
+    --toast-bg: rgba(19, 38, 29, .98);
+    --file-hover-bg: rgba(69, 201, 138, .06);
+  }
+
+  :root[data-theme="ocean"] {
+    color-scheme: light;
+    --bg: #eef6fb; --surface: #f8fcff; --surface-2: #e4f0f8; --surface-3: #d5e7f2;
+    --line: #c7dde9; --line-2: #b0cddd; --text: #173247; --muted: #587589; --dim: #86a1b2;
+    --a1: #146c99; --a2: #1b90ad; --accent: #1b8bb5;
+    --ok: #2f8a67; --err: #b34a4a; --warn: #9a6b00;
+    --m-get: #0e7490; --m-post: #6d28d9; --m-del: #b91c1c;
+
+    --sidebar-bg: rgba(248, 252, 255, .9);
+    --mobile-nav-bg: rgba(248, 252, 255, .96);
+    --topbar-bg: rgba(248, 252, 255, .94);
+    --backdrop: rgba(23, 50, 71, .35);
+    --glow-1: rgba(20, 108, 153, .10);
+    --glow-2: rgba(27, 144, 173, .08);
+    --nav-active-1: rgba(20, 108, 153, .14);
+    --nav-active-2: rgba(27, 144, 173, .07);
+    --hover-border: #9fbfd2;
+    --focus-ring: rgba(20, 108, 153, .20);
+    --swatch-border: rgba(23, 50, 71, .2);
+    --code-bg: #f3faff;
+    --strip-bg: #e2eff7;
+    --px-bg: #cfe3ee;
+    --prev-bg: #d5e7f2;
+    --prev-off-bg: #e8f3f9;
+    --hyst-line: rgba(23, 50, 71, .08);
+    --savebar-bg: rgba(248, 252, 255, .94);
+    --toast-bg: rgba(248, 252, 255, .98);
+    --file-hover-bg: rgba(20, 108, 153, .06);
+  }
+
+  :root[data-theme="lavender"] {
+    color-scheme: light;
+    --bg: #f6f2fc; --surface: #fcfaff; --surface-2: #efe8fa; --surface-3: #e4daf5;
+    --line: #d8cdeb; --line-2: #c4b5de; --text: #2d2440; --muted: #6f6288; --dim: #9a8db2;
+    --a1: #6a45bd; --a2: #8758d0; --accent: #8158d6;
+    --ok: #4f8a62; --err: #b24a5a; --warn: #9a6b00;
+    --m-get: #0e7490; --m-post: #6d28d9; --m-del: #b91c1c;
+
+    --sidebar-bg: rgba(252, 250, 255, .9);
+    --mobile-nav-bg: rgba(252, 250, 255, .96);
+    --topbar-bg: rgba(252, 250, 255, .94);
+    --backdrop: rgba(45, 36, 64, .35);
+    --glow-1: rgba(106, 69, 189, .10);
+    --glow-2: rgba(135, 88, 208, .08);
+    --nav-active-1: rgba(106, 69, 189, .14);
+    --nav-active-2: rgba(135, 88, 208, .07);
+    --hover-border: #b8a6d6;
+    --focus-ring: rgba(106, 69, 189, .20);
+    --swatch-border: rgba(45, 36, 64, .2);
+    --code-bg: #faf7ff;
+    --strip-bg: #ede5f8;
+    --px-bg: #ddd0ef;
+    --prev-bg: #e4daf5;
+    --prev-off-bg: #f1ebfa;
+    --hyst-line: rgba(45, 36, 64, .08);
+    --savebar-bg: rgba(252, 250, 255, .94);
+    --toast-bg: rgba(252, 250, 255, .98);
+    --file-hover-bg: rgba(106, 69, 189, .06);
+  }
+
+  :root[data-theme="midnight"] {
+    --bg: #07101d; --surface: #0b1626; --surface-2: #101e31; --surface-3: #162840;
+    --line: #1d3350; --line-2: #284363; --text: #e7eef9; --muted: #91a5bf; --dim: #637a96;
+    --a1: #4d8dff; --a2: #6f6dff; --accent: #6285ff;
+    --ok: #3ccf9a; --err: #f87171; --warn: #fbbf24;
+    --m-get: #7dd3fc; --m-post: #c4b5fd; --m-del: #fca5a5;
+
+    --sidebar-bg: rgba(7, 16, 29, .92);
+    --mobile-nav-bg: rgba(7, 16, 29, .96);
+    --topbar-bg: rgba(7, 16, 29, .94);
+    --backdrop: rgba(0, 5, 12, .8);
+    --glow-1: rgba(77, 141, 255, .10);
+    --glow-2: rgba(111, 109, 255, .08);
+    --nav-active-1: rgba(77, 141, 255, .18);
+    --nav-active-2: rgba(111, 109, 255, .08);
+    --hover-border: #34506f;
+    --focus-ring: rgba(77, 141, 255, .20);
+    --swatch-border: rgba(255, 255, 255, .15);
+    --code-bg: #050c16;
+    --strip-bg: #050c16;
+    --px-bg: #162840;
+    --prev-bg: #162840;
+    --prev-off-bg: #0b1626;
+    --hyst-line: rgba(255, 255, 255, .08);
+    --savebar-bg: rgba(11, 22, 38, .95);
+    --toast-bg: rgba(16, 30, 49, .98);
+    --file-hover-bg: rgba(77, 141, 255, .06);
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
@@ -20,8 +406,8 @@
   body {
     margin: 0; color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     background:
-      radial-gradient(1100px 600px at 85% -10%, rgba(91, 140, 255, .09), transparent 60%),
-      radial-gradient(900px 500px at -10% 110%, rgba(164, 107, 255, .08), transparent 60%),
+      radial-gradient(1100px 600px at 85% -10%, var(--glow-1), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, var(--glow-2), transparent 60%),
       var(--bg);
     background-attachment: fixed; min-height: 100vh; -webkit-tap-highlight-color: transparent;
   }
@@ -35,7 +421,7 @@
   /* ---------- каркас ---------- */
   .sidebar {
     position: fixed; inset: 0 auto 0 0; width: 240px; z-index: 10; display: flex; flex-direction: column;
-    padding: 20px 14px; background: rgba(15, 18, 24, .82); backdrop-filter: blur(14px); border-right: 1px solid var(--line);
+    padding: 20px 14px; background: var(--sidebar-bg); backdrop-filter: blur(14px); border-right: 1px solid var(--line);
   }
   .logo { display: flex; align-items: center; gap: 12px; padding: 4px 10px 22px; font-size: 18px; font-weight: 700; }
   .logo small { display: block; font-size: 11px; font-weight: 500; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
@@ -47,12 +433,17 @@
   .nav { position: relative; display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px;
          color: var(--muted); text-decoration: none; font-weight: 500; transition: background .15s, color .15s; }
   .nav:hover { background: var(--surface-2); color: var(--text); }
-  .nav.active { background: linear-gradient(90deg, rgba(91, 140, 255, .16), rgba(164, 107, 255, .06)); color: var(--text); }
+  .nav.active { background: linear-gradient(90deg, var(--nav-active-1), var(--nav-active-2)); color: var(--text); }
   .nav.active::before { content: ''; position: absolute; left: -14px; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0;
                         background: linear-gradient(var(--a1), var(--a2)); }
   .nav.active svg { color: var(--a1); }
   .nav .dotmark { margin-left: auto; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 8px var(--warn); }
+
   .side-foot { margin-top: auto; padding: 14px 12px 0; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); display: grid; gap: 6px; }
+  .theme-pick { display: flex; align-items: center; gap: 8px; }
+  .theme-pick > span { flex: none; }
+  .theme-pick select { flex: 1; min-width: 0; padding: 5px 6px; font-size: 12px; border-radius: 8px; }
+  .theme-top { display: none; }
   .conn { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; }
   .conn::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
   .conn.on::before { background: var(--ok); box-shadow: 0 0 0 3px rgba(52, 211, 153, .18); }
@@ -61,9 +452,6 @@
   .topbar { display: none; }
   main { margin-left: 240px; padding: 28px 32px 48px; max-width: 1240px; }
 
-  .ph { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
-  .ph p { margin: 4px 0 0; color: var(--muted); }
-  .ph-act { display: flex; gap: 8px; align-items: center; }
   .page { animation: fadein .25s ease; }
   @keyframes fadein { from { opacity: 0; transform: translateY(6px); } }
 
@@ -84,10 +472,10 @@
   .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 14px; border-radius: 10px;
          border: 1px solid var(--line-2); background: var(--surface-2); color: var(--text); font: inherit; font-weight: 550;
          cursor: pointer; text-decoration: none; transition: background .15s, border-color .15s, transform .1s, box-shadow .15s; white-space: nowrap; }
-  .btn:hover { background: var(--surface-3); border-color: #3a4558; }
+  .btn:hover { background: var(--surface-3); border-color: var(--hover-border); }
   .btn:active { transform: scale(.97); }
   .btn:disabled { opacity: .45; pointer-events: none; }
-  .btn.primary { background: linear-gradient(135deg, var(--a1), var(--a2)); border-color: transparent; color: #fff;
+  .btn.primary { background: linear-gradient(135deg, var(--a1), var(--a2)); border-color: transparent; color: var(--primary-text);
                  box-shadow: 0 6px 18px -6px rgba(123, 125, 255, .7); }
   .btn.primary:hover { filter: brightness(1.08); }
   .btn.danger { color: var(--err); border-color: rgba(248, 113, 113, .3); background: rgba(248, 113, 113, .07); }
@@ -96,15 +484,15 @@
   .btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
   .btn.ghost:hover { color: var(--text); background: var(--surface-2); }
   .btn.sm { padding: 5px 10px; font-size: 12px; border-radius: 8px; }
-  .btn.icon { width: 38px; height: 38px; padding: 0; }
-  .btn.on { border-color: rgba(52, 211, 153, .45); background: rgba(52, 211, 153, .1); color: #7ff0c3; }
+  .btn.icon { width: 38px; height: 38px; padding: 0; flex: none; }
+  .btn.on { border-color: rgba(52, 211, 153, .45); background: rgba(52, 211, 153, .1); color: var(--ok); }
   .btn.spin svg { animation: spin 1s linear infinite; }
 
   input, select, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line-2);
                             border-radius: 10px; padding: 9px 11px; outline: none; transition: border-color .15s, box-shadow .15s; min-width: 0; }
-  input:focus, select:focus, textarea:focus { border-color: var(--a1); box-shadow: 0 0 0 3px rgba(91, 140, 255, .18); }
+  input:focus, select:focus, textarea:focus { border-color: var(--a1); box-shadow: 0 0 0 3px var(--focus-ring); }
   textarea { width: 100%; resize: vertical; }
-  textarea.code { font: 12.5px/1.55 ui-monospace, "Cascadia Code", Consolas, monospace; min-height: 320px; tab-size: 2; background: #090b10; }
+  textarea.code { font: 12.5px/1.55 ui-monospace, "Cascadia Code", Consolas, monospace; min-height: 320px; tab-size: 2; background: var(--code-bg); }
   label.f { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
   label.f > span:first-child { width: 96px; flex: none; color: var(--muted); font-size: 13px; }
   label.f > input:not([type=range]):not([type=checkbox]):not([type=color]), label.f > select { flex: 1; }
@@ -124,9 +512,9 @@
                       box-shadow: 0 0 0 4px rgba(123, 125, 255, .28), 0 2px 6px rgba(0, 0, 0, .5); }
   input[type=color] { -webkit-appearance: none; appearance: none; padding: 0; border: none; background: none; cursor: pointer; }
   input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
-  input[type=color]::-webkit-color-swatch { border: 2px solid rgba(255, 255, 255, .15); border-radius: 10px; }
-  input[type=color]::-moz-color-swatch { border: 2px solid rgba(255, 255, 255, .15); border-radius: 10px; }
-  input[type=time] { color-scheme: dark; }
+  input[type=color]::-webkit-color-swatch { border: 2px solid var(--swatch-border); border-radius: 10px; }
+  input[type=color]::-moz-color-swatch { border: 2px solid var(--swatch-border); border-radius: 10px; }
+  input[type=time] { color-scheme: inherit; }
   .val { min-width: 38px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
 
   .sw { position: relative; display: inline-block; width: 40px; height: 22px; flex: none; cursor: pointer; }
@@ -145,30 +533,30 @@
 
   .badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 20px;
            background: var(--surface-3); color: var(--muted); white-space: nowrap; }
-  .badge.on { background: rgba(52, 211, 153, .12); color: #6ee7b7; }
+  .badge.on { background: rgba(52, 211, 153, .12); color: var(--ok); }
   .badge.on::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); animation: blink 1.4s infinite; }
   .badge.warn { background: rgba(251, 191, 36, .12); color: var(--warn); }
   .badge.err { background: rgba(248, 113, 113, .12); color: var(--err); }
-  .badge.acc { background: rgba(91, 140, 255, .14); color: #9db8ff; }
+  .badge.acc { background: rgba(91, 140, 255, .14); color: var(--a1); }
   @keyframes blink { 50% { opacity: .3; } }
 
   .banner { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; margin-bottom: 16px; flex-wrap: wrap; }
   .banner > span { flex: 1; min-width: 200px; }
-  .banner.warn { background: rgba(251, 191, 36, .08); border: 1px solid rgba(251, 191, 36, .25); color: #fcd675; }
-  .banner.info { background: rgba(91, 140, 255, .08); border: 1px solid rgba(91, 140, 255, .25); color: #b5c9ff; }
+  .banner.warn { background: rgba(251, 191, 36, .08); border: 1px solid rgba(251, 191, 36, .25); color: var(--warn); }
+  .banner.info { background: rgba(91, 140, 255, .08); border: 1px solid rgba(91, 140, 255, .25); color: var(--a1); }
 
   .bar { height: 6px; border-radius: 3px; background: var(--line-2); overflow: hidden; }
   .bar > i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--a1), var(--a2)); transition: width .5s; }
   .bar.hot > i { background: linear-gradient(90deg, var(--warn), var(--err)); }
 
-  pre { margin: 0; background: #090b10; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  pre { margin: 0; background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
         font: 12px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-all; max-height: 320px; overflow: auto; }
 
   /* ---------- превью ленты (шар, свотчи, карточки режимов) ---------- */
-  .prev { background: #232a35; box-shadow: 0 0 var(--gs, 40px) var(--glow, transparent); transition: background .3s, box-shadow .3s; }
+  .prev { background: var(--prev-bg); box-shadow: 0 0 var(--gs, 40px) var(--glow, transparent); transition: background .3s, box-shadow .3s; }
   .prev.rainbow { background: conic-gradient(#ff4d6d, #ffb84d, #f4ff4d, #4dff9a, #4dd2ff, #6b6bff, #d04dff, #ff4d6d) !important; animation: spin var(--dur, 2s) linear infinite; }
   .prev.pulse { animation: pulse var(--dur, 2s) ease-in-out infinite; }
-  .prev.off { background: #141922 !important; box-shadow: inset 0 0 0 1px var(--line-2) !important; }
+  .prev.off { background: var(--prev-off-bg) !important; box-shadow: inset 0 0 0 1px var(--line-2) !important; }
   .prev.pix { background: repeating-linear-gradient(135deg, #ff5a5a 0 22%, #5affa0 22% 44%, #5a8cff 44% 66%, #ffd65a 66% 88%) !important; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes pulse { 50% { opacity: .45; } }
@@ -192,6 +580,7 @@
   .tile-l { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; font-weight: 550; }
   .tile-l svg { width: 16px; height: 16px; }
   .tile-v { font-size: 24px; font-weight: 700; margin: 6px 0 2px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile-mode { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.2; }
   .tile-s { color: var(--muted); font-size: 12px; margin-bottom: 8px; min-height: 18px; }
   .auto-list { display: grid; gap: 8px; }
   .arow { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 12px; background: var(--surface-2); border: 1px solid transparent; text-decoration: none; transition: border-color .15s; }
@@ -203,31 +592,34 @@
   .arow-b span { color: var(--muted); font-size: 12.5px; }
 
   /* ---------- лента ---------- */
-  .modes { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
-  .mode { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 14px 10px; min-height: 64px; border-radius: 14px; cursor: pointer;
-          background: var(--surface-2); border: 1px solid var(--line); color: var(--text); font: inherit; transition: border-color .15s, transform .1s, background .15s; }
-  .mode:hover { border-color: var(--line-2); background: var(--surface-3); }
-  .mode:active { transform: scale(.97); }
-  .mode.active { border-color: var(--a1); background: linear-gradient(160deg, rgba(91,140,255,.14), rgba(164,107,255,.06)); box-shadow: 0 0 0 1px var(--a1) inset; }
-  .mode-name { font-weight: 600; font-size: 13px; text-align: center; line-height: 1.25; }
-  .mode-id { font-size: 11px; color: var(--dim); }
+  .mode-select { width: 100%; }
+  details.card > summary.card-h { list-style: none; cursor: pointer; margin-bottom: 0; }
+  details.card > summary.card-h::-webkit-details-marker { display: none; }
+  details.card > summary.card-h::after { content: '▸'; color: var(--muted); font-size: 12px; }
+  details.card[open] > summary.card-h { margin-bottom: 14px; }
+  details.card[open] > summary.card-h::after { content: '▾'; }
   .color-big { display: flex; align-items: center; gap: 16px; }
   .color-big input[type=color] { width: 84px; height: 84px; }
   .color-big input[type=color]::-webkit-color-swatch { border-radius: 20px; }
   .color-big input[type=color]::-moz-color-swatch { border-radius: 20px; }
   .hex { font: 600 20px ui-monospace, Consolas, monospace; letter-spacing: .02em; }
   .presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(34px, 1fr)); gap: 8px; margin-top: 16px; }
-  .preset { aspect-ratio: 1; border-radius: 10px; border: 2px solid transparent; cursor: pointer; transition: transform .1s, border-color .15s; padding: 0; }
+  .preset { aspect-ratio: 1; width: 100%; border-radius: 10px; border: 2px solid transparent; cursor: pointer; transition: transform .1s, border-color .15s; padding: 0; }
   .preset:hover { transform: scale(1.08); border-color: rgba(255,255,255,.5); }
-  .strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(18px, 1fr)); gap: 5px; padding: 14px; background: #090b10;
-           border-radius: 12px; border: 1px solid var(--line); touch-action: none; user-select: none; margin-top: 12px; }
-  .px { aspect-ratio: 1; border-radius: 50%; background: #1b212b; cursor: crosshair; transition: transform .08s; }
+  .preset-wrap { position: relative; }
+  .preset-del { position: absolute; top: -5px; right: -5px; width: 16px; height: 16px; padding: 0; border: none; border-radius: 50%;
+                background: var(--surface-3); color: var(--text); font-size: 12px; line-height: 1; cursor: pointer; }
+  .preset-add { display: grid; place-items: center; background: var(--surface-2); color: var(--muted); border: 1px dashed var(--line-2);
+                font-size: 18px; font-weight: 400; }
+  .strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(18px, 1fr)); gap: 5px; padding: 14px;
+           border-radius: 12px; border: 1px solid var(--line); touch-action: none; user-select: none; margin-top: 12px; background: var(--strip-bg); }
+  .px { aspect-ratio: 1; border-radius: 50%; background: var(--px-bg); cursor: crosshair; transition: transform .08s; }
   .px:hover { transform: scale(1.25); }
 
   /* ---------- автоматика ---------- */
-  .prio-scale { position: relative; height: 52px; border-radius: 10px; background: linear-gradient(90deg, #151a22, #1f2b45); }
+  .prio-scale { position: relative; height: 52px; border-radius: 10px; background: linear-gradient(90deg, var(--surface-2), var(--surface-3)); }
   .pchip { position: absolute; transform: translate(-50%, -50%); padding: 3px 10px; border-radius: 20px; background: var(--surface);
-           border: 1px solid var(--a1); font-size: 12px; font-weight: 550; white-space: nowrap; transition: left .3s; box-shadow: 0 2px 10px rgba(0,0,0,.4); }
+           color: var(--text); border: 1px solid var(--a1); font-size: 12px; font-weight: 550; white-space: nowrap; transition: left .3s; box-shadow: 0 2px 10px rgba(0,0,0,.4); }
   .ticks { display: flex; justify-content: space-between; font-size: 10px; color: var(--dim); margin-top: 4px; }
   .autos { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 16px; }
   .acard { transition: border-color .3s, box-shadow .3s, opacity .2s; }
@@ -263,12 +655,12 @@
   .chip { padding: 4px 11px; border-radius: 20px; font: inherit; font-size: 12px; font-weight: 550; cursor: pointer;
           background: var(--surface-2); color: var(--muted); border: 1px solid var(--line-2); transition: .15s; }
   .chip:hover { color: var(--text); }
-  .chip.sel { background: linear-gradient(135deg, var(--a1), var(--a2)); border-color: transparent; color: #fff; }
+  .chip.sel { background: linear-gradient(135deg, var(--a1), var(--a2)); border-color: transparent; color: var(--primary-text); }
   .trow { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
   .trow input { flex: 1; }
   .tl { position: relative; height: 12px; background: var(--surface-3); border-radius: 6px; overflow: hidden; }
   .tl-seg { position: absolute; top: 0; bottom: 0; background: linear-gradient(90deg, var(--a1), var(--a2)); }
-  .tl-now { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #fff; box-shadow: 0 0 6px #fff; }
+  .tl-now { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--text); box-shadow: 0 0 6px var(--text); }
   .ledrow { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; align-items: center; }
   .swwrap { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 90px; flex: none; text-align: center; font-size: 12px; }
   .swatch { width: 70px; height: 70px; border-radius: 50%; --gs: 26px; }
@@ -276,7 +668,7 @@
   .ledctl label.f > span:first-child { width: 70px; }
   .ledctl select { width: 100%; }
   .lscale { position: relative; height: 26px; border-radius: 8px; margin: 26px 0 24px; }
-  .ls-hyst { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(45deg, rgba(255,255,255,.2) 0 4px, transparent 4px 8px); }
+  .ls-hyst { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(45deg, var(--hyst-line) 0 4px, transparent 4px 8px); }
   .ls-mark { position: absolute; top: -5px; bottom: -5px; width: 3px; margin-left: -1px; border-radius: 2px; transition: left .2s; }
   .ls-mark.dark { background: #a393ff; } .ls-mark.light { background: #f5c542; }
   .ls-mark span { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); font-size: 12px; margin-top: 3px; }
@@ -284,7 +676,7 @@
             border: 3px solid var(--ok); box-shadow: 0 0 12px var(--ok); transition: left .6s; }
   .ls-now span { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; }
   .savebar { position: sticky; bottom: 16px; z-index: 5; margin-top: 16px; padding: 12px 16px; border-radius: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
-             background: rgba(24, 29, 38, .9); backdrop-filter: blur(12px); border: 1px solid var(--line-2); box-shadow: 0 10px 30px rgba(0,0,0,.4); transition: border-color .2s; }
+             background: var(--savebar-bg); backdrop-filter: blur(12px); border: 1px solid var(--line-2); box-shadow: 0 10px 30px rgba(0,0,0,.4); transition: border-color .2s; }
   .savebar.dirty { border-color: rgba(251, 191, 36, .45); }
   .savebar:not(.dirty) { display: none; }   /* изменений нет — не занимаем экран; точка в меню всё равно подскажет */
   .savebar .sb-t { flex: 1; min-width: 180px; color: var(--muted); font-size: 13px; }
@@ -295,7 +687,7 @@
   .li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; cursor: pointer; border: 1px solid transparent; }
   .li:hover { background: var(--surface-2); }
   .li.active { background: var(--surface-2); border-color: var(--line-2); }
-  .li-ic { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; background: rgba(91,140,255,.12); color: #9db8ff; flex: none; }
+  .li-ic { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; background: var(--nav-active-1); color: var(--a1); flex: none; }
   .li-b { flex: 1; min-width: 0; }
   .li-b b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
   .li-b span { color: var(--muted); font-size: 12px; }
@@ -303,13 +695,15 @@
 
   /* ---------- сеть ---------- */
   .net-hero { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
-  .net-ic { width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center; background: linear-gradient(135deg, rgba(91,140,255,.2), rgba(164,107,255,.15)); color: #aac2ff; }
+  .net-ic { width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center; background: linear-gradient(135deg, var(--nav-active-1), var(--nav-active-2)); color: var(--a1); }
   .net-ic svg { width: 28px; height: 28px; }
   .kv { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; margin-top: 14px; font-size: 13.5px; }
   .kv > span:nth-child(odd) { color: var(--muted); }
   .kv > span:nth-child(even) { font-weight: 550; word-break: break-all; }
-  .pw { display: flex; gap: 6px; flex: 1; }
-  .pw input { flex: 1; }
+  .card-sub { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .card-sub h4 { font-size: 14px; margin: 0 0 8px; }
+  .pw { display: flex; gap: 6px; flex: 1; min-width: 0; }
+  .pw input { flex: 1 1 0; min-width: 0; }
   .scan-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; cursor: pointer; }
   .scan-row:hover { background: var(--surface-2); }
   .scan-row b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
@@ -328,12 +722,12 @@
   #log summary::-webkit-details-marker { display: none; }
   #log pre { margin-top: 6px; }
   .m { font-weight: 700; min-width: 50px; }
-  .m.GET { color: #7dd3fc; } .m.POST { color: #c4b5fd; } .m.DELETE { color: #fca5a5; }
+  .m.GET { color: var(--m-get); } .m.POST { color: var(--m-post); } .m.DELETE { color: var(--m-del); }
   .st-ok { color: var(--ok); font-weight: 700; } .st-err { color: var(--err); font-weight: 700; }
   .danger-zone { border-color: rgba(248, 113, 113, .25); }
   .file-pick { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px dashed var(--line-2); border-radius: 12px;
                cursor: pointer; transition: border-color .15s, background .15s; }
-  .file-pick:hover { border-color: var(--a1); background: rgba(91, 140, 255, .05); }
+  .file-pick:hover { border-color: var(--a1); background: var(--file-hover-bg); }
   .file-pick input { display: none; }
   .file-pick .fp-b { flex: 1; min-width: 0; }
   .file-pick .fp-b b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -341,7 +735,7 @@
 
   /* ---------- оверлеи ---------- */
   .modal, .overlay { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px;
-                     background: rgba(5, 7, 10, .7); backdrop-filter: blur(6px); animation: fadein .15s ease; }
+                     background: var(--backdrop); backdrop-filter: blur(6px); animation: fadein .15s ease; }
   .modal-box { width: min(420px, 100%); background: var(--surface); border: 1px solid var(--line-2); border-radius: 18px; padding: 22px;
                box-shadow: 0 20px 60px rgba(0,0,0,.6); }
   .modal-box h3 { font-size: 17px; margin-bottom: 8px; }
@@ -350,10 +744,20 @@
   .overlay { text-align: center; }
   .overlay h3 { font-size: 20px; margin: 22px 0 6px; }
   .overlay p { color: var(--muted); max-width: 380px; margin: 0 auto; }
+
+  /* ---------- вход ---------- */
+  .login-screen { position: fixed; inset: 0; z-index: 110; display: grid; place-items: center; padding: 20px; background: var(--bg); }
+  .login-card { width: min(360px, 100%); background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r);
+                padding: 24px; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+  .login-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; font-size: 18px; }
+  .login-card h2 { font-size: 22px; margin-bottom: 4px; }
+  .login-card > p { margin-bottom: 14px; }
+  .login-err { color: var(--err); font-size: 13px; min-height: 18px; margin: 8px 0; }
+  .login-card > .btn { width: 100%; justify-content: center; margin-top: 4px; }
   .spinner { width: 64px; height: 64px; margin: 0 auto; border-radius: 50%; border: 4px solid var(--line-2); border-top-color: var(--a1); border-right-color: var(--a2); animation: spin .9s linear infinite; }
   #toasts { position: fixed; right: 20px; bottom: 20px; z-index: 60; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; pointer-events: none; }
   .toast { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-radius: 12px; max-width: 380px;
-           background: rgba(30, 36, 48, .96); border: 1px solid var(--line-2); box-shadow: 0 10px 30px rgba(0,0,0,.45);
+           background: var(--toast-bg); border: 1px solid var(--line-2); box-shadow: 0 10px 30px rgba(0,0,0,.45);
            transform: translateY(10px); opacity: 0; transition: .25s; }
   .toast.show { transform: none; opacity: 1; }
   .toast.ok svg { color: var(--ok); } .toast.err svg { color: var(--err); } .toast.warn svg { color: var(--warn); }
@@ -361,7 +765,7 @@
   /* ---------- телефон ---------- */
   @media (max-width: 880px) {
     .sidebar { inset: auto 0 0 0; width: auto; height: calc(64px + env(safe-area-inset-bottom)); padding: 0 4px env(safe-area-inset-bottom);
-               flex-direction: row; border-right: none; border-top: 1px solid var(--line); background: rgba(13, 16, 22, .92); }
+               flex-direction: row; border-right: none; border-top: 1px solid var(--line); background: var(--mobile-nav-bg); }
     .logo, .side-foot { display: none; }
     .nav-list { flex-direction: row; flex: 1; gap: 0; }
     .nav { flex: 1; flex-direction: column; gap: 3px; padding: 9px 0 6px; font-size: 10.5px; border-radius: 12px; }
@@ -369,7 +773,8 @@
     .nav.active::before { left: 30%; right: 30%; top: 0; bottom: auto; width: auto; height: 3px; border-radius: 0 0 3px 3px; }
     .nav .dotmark { position: absolute; top: 8px; right: calc(50% - 16px); margin: 0; }
     .topbar { display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 9; padding: 10px 16px;
-              background: rgba(11, 14, 19, .85); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
+              background: var(--topbar-bg); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
+    .theme-top { display: block; max-width: 104px; padding: 4px 5px; font-size: 10.5px; border-radius: 8px; }
     .topbar .logo-dot { width: 22px; height: 22px; }
     .topbar .logo-dot::after { inset: 5px; }
     .topbar b { flex: 1; font-size: 16px; }
@@ -384,6 +789,7 @@
     .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
     .tile { padding: 14px; }
     .tile-v { font-size: 20px; }
+    .tile-mode { font-size: 16px; }
     #toasts { left: 16px; right: 16px; bottom: calc(76px + env(safe-area-inset-bottom)); align-items: stretch; }
     .toast { max-width: none; }
     .savebar { bottom: calc(76px + env(safe-area-inset-bottom)); }
@@ -396,6 +802,61 @@
     .mode-row .seg button { flex: 1; }
     .console { grid-template-columns: auto 1fr; }
     .console button { grid-column: 1 / -1; }
+
+    /* мобильная вёрстка: не даём кнопкам и строкам вылезать за карточку */
+    .btn { white-space: normal; max-width: 100%; }
+    .row,
+    .row > *,
+    .card-h > *,
+    .grp-t > *,
+    label.f { min-width: 0; }
+    .row.between > .row { width: 100%; justify-content: flex-end; }
+    .card-h,
+    .grp-t,
+    label.pw-row { flex-wrap: wrap; }
+    label.pw-row { gap: 6px; }
+    label.pw-row > span:first-child { width: 100%; }
+    label.pw-row > .pw { flex: 1 1 100%; width: 100%; }
+
+    /* Wi-Fi: SSID и dBm сверху, BSSID отдельной строкой */
+    .scan-row {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      grid-template-rows: auto auto;
+      column-gap: 10px;
+      row-gap: 2px;
+      align-items: start;
+    }
+    .scan-row .sig { grid-row: 1 / span 2; align-self: center; }
+    .scan-row b {
+      grid-column: 2;
+      grid-row: 1;
+      min-width: 0;
+      overflow: visible;
+      text-overflow: clip;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    .scan-row .badge { grid-column: 3; grid-row: 1; align-self: start; }
+    .scan-row .muted.small {
+      grid-column: 2 / span 2;
+      grid-row: 2;
+      min-width: 0;
+      overflow: visible;
+      text-overflow: clip;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      font-size: 11px;
+    }
+
+    /* длинные подписи на шкале приоритетов не вылезают за край */
+    .pchip { max-width: calc(100% - 16px); overflow: hidden; text-overflow: ellipsis; }
+  }
+
+  @media (max-width: 420px) {
+    .topbar { gap: 6px; padding: 8px 10px; }
+    #topTime { display: none; }
+    .theme-top { max-width: 92px; }
   }
 </style>
 </head>
@@ -414,14 +875,14 @@
   </nav>
   <div class="side-foot">
     <span class="conn">подключение…</span>
-    <span id="sideTime">—</span>
-    <span id="sideUpd"></span>
+    <label class="theme-pick"><span>Тема</span><select id="themeSelect"></select></label>
   </div>
 </aside>
 
 <header class="topbar">
   <span class="logo-dot"></span><b>WebLed</b>
   <span class="muted" id="topTime"></span>
+  <select id="themeSelectTop" class="theme-top" title="Тема"></select>
   <span class="conn"></span>
 </header>
 
@@ -429,31 +890,10 @@
 
 <!-- ================= ОБЗОР ================= -->
 <section class="page" id="p-home" hidden>
-  <div class="ph">
-    <div><h1>Обзор</h1><p>Что происходит с устройством прямо сейчас</p></div>
-    <div class="ph-act"><button class="btn icon" onclick="refreshAll(this)" title="Обновить"><i data-ic="refresh"></i></button></div>
-  </div>
-
-  <div class="card hero">
-    <div class="orb-wrap"><div class="orb prev" id="hOrb"></div></div>
-    <div class="hero-body">
-      <div class="eyebrow">Сейчас на ленте</div>
-      <div class="hero-mode" id="hMode">—</div>
-      <div class="hero-meta" id="hMeta"></div>
-      <div class="row">
-        <button class="btn primary" id="hPower" onclick="togglePower()"><i data-ic="power"></i><span>Выключить</span></button>
-        <button class="btn" id="hManual" onclick="setManual(!ledInfo.settings.manual)"><i data-ic="hand"></i><span>Ручное управление</span></button>
-        <a class="btn ghost" href="#/led">Настроить <i data-ic="arrow"></i></a>
-      </div>
-      <label class="slider-row"><span>Яркость</span><input type="range" id="hBright" min="0" max="100"><b class="val" id="hBrightV"></b></label>
-    </div>
-  </div>
-
   <div class="tiles">
+    <div class="card tile"><div class="tile-v tile-mode" id="hMode">—</div><div class="tile-s" id="hControlMode">—</div></div>
     <div class="card tile"><div class="tile-l"><i data-ic="clock"></i>Время устройства</div><div class="tile-v" id="tTime">—</div><div class="tile-s" id="tTimeS"></div></div>
     <div class="card tile"><div class="tile-l"><i data-ic="temp"></i>Температура CPU</div><div class="tile-v" id="tTemp">—</div><div class="tile-s">допустимо до 80 °C</div><div class="bar" id="tTempBar"><i></i></div></div>
-    <div class="card tile"><div class="tile-l"><i data-ic="chip"></i>Память IRAM</div><div class="tile-v" id="tIram">—</div><div class="tile-s" id="tIramS"></div><div class="bar"><i id="tIramBar"></i></div></div>
-    <div class="card tile"><div class="tile-l"><i data-ic="sun"></i>Датчик света</div><div class="tile-v" id="tLight">—</div><div class="tile-s" id="tLightS"></div><div class="bar"><i id="tLightBar"></i></div></div>
     <div class="card tile"><div class="tile-l"><i data-ic="wifi"></i>Сеть</div><div class="tile-v" id="tNet">—</div><div class="tile-s" id="tNetS"></div></div>
   </div>
 
@@ -465,14 +905,6 @@
 
 <!-- ================= ЛЕНТА ================= -->
 <section class="page" id="p-led" hidden>
-  <div class="ph">
-    <div><h1>Лента</h1><p>Режим, цвет, яркость и попиксельная раскраска</p></div>
-    <div class="ph-act">
-      <label class="swrow" style="margin:0 8px 0 0"><span class="muted small">Сразу применять</span><span class="sw"><input type="checkbox" id="ledLive" checked><span></span></span></label>
-      <button class="btn icon" onclick="refreshBtn(this, loadLed)" title="Обновить"><i data-ic="refresh"></i></button>
-    </div>
-  </div>
-
   <div class="banner warn" id="ledBanner" hidden>
     <i data-ic="alert"></i><span>Лентой сейчас управляет автоматика — ручные изменения будут отклонены.</span>
     <button class="btn sm" onclick="setManual(true)">Взять управление</button>
@@ -485,7 +917,7 @@
   <div class="grid">
     <div class="card span2">
       <div class="card-h"><h3>Режим</h3><span class="muted small" id="modeCount"></span></div>
-      <div class="modes" id="modeGrid"></div>
+      <select id="modeSelect" class="mode-select"></select>
     </div>
 
     <div class="card">
@@ -501,15 +933,14 @@
       <div class="card-h"><h3>Параметры</h3></div>
       <label class="f"><span>Яркость</span><input type="range" id="ledBright" min="0" max="100"><b class="val" id="ledBrightV"></b></label>
       <label class="f"><span>Скорость</span><input type="range" id="ledSpeed" min="0" max="100"><b class="val" id="ledSpeedV"></b></label>
-      <p class="muted small">Скорость влияет на анимированные режимы. При выключенном «Сразу применять» изменения уходят по кнопке.</p>
+      <p class="muted small">Скорость влияет на анимированные режимы.</p>
       <div class="row between mt">
         <button class="btn" onclick="togglePower()"><i data-ic="power"></i><span id="ledPowerT">Выключить</span></button>
-        <button class="btn primary" onclick="applyState()"><i data-ic="check"></i>Применить</button>
       </div>
     </div>
 
-    <div class="card span2">
-      <div class="card-h"><h3>Попиксельно</h3><span class="muted small" id="pxInfo"></span></div>
+    <details class="card span2" id="pxCard">
+      <summary class="card-h"><h3>Попиксельно</h3><span class="muted small" id="pxInfo"></span></summary>
       <div class="row">
         <input type="color" id="brush" value="#ff3d7f" style="width:44px;height:38px" title="Кисть">
         <button class="btn sm" onclick="pxFill()">Залить</button>
@@ -520,18 +951,12 @@
         <button class="btn primary sm" id="pxSend" onclick="sendPixels()"><i data-ic="send"></i>Отправить на ленту</button>
       </div>
       <div class="strip" id="strip"></div>
-      <p class="muted small">Нажмите или проведите по светодиодам, чтобы раскрасить их кистью. Отправляются только раскрашенные, пачками по 80. Лента переключится в режим 253 «Ручной».</p>
-    </div>
+    </details>
   </div>
 </section>
 
 <!-- ================= АВТОМАТИКА ================= -->
 <section class="page" id="p-auto" hidden>
-  <div class="ph">
-    <div><h1>Автоматика</h1><p>Кто и когда управляет лентой без вас</p></div>
-    <div class="ph-act"><button class="btn icon" onclick="refreshBtn(this, loadConfig)" title="Перечитать с устройства"><i data-ic="refresh"></i></button></div>
-  </div>
-
   <div id="autoSec">
     <div class="card">
       <div class="card-h"><h3>Приоритет</h3><span class="muted small" id="prioText"></span></div>
@@ -559,16 +984,9 @@
 
 <!-- ================= ЭФФЕКТЫ ================= -->
 <section class="page" id="p-fx" hidden>
-  <div class="ph">
-    <div><h1>Эффекты</h1><p>Скрипты, которые компилируются на устройстве и становятся режимами</p></div>
-    <div class="ph-act">
-      <button class="btn" onclick="newFile()"><i data-ic="plus"></i>Новый</button>
-      <button class="btn icon" onclick="refreshBtn(this, loadFiles)" title="Обновить"><i data-ic="refresh"></i></button>
-    </div>
-  </div>
   <div class="grid fx-grid">
     <div class="card">
-      <div class="card-h"><h3>Файлы</h3><span class="muted small" id="fsInfo"></span></div>
+      <div class="card-h"><h3>Файлы</h3><span class="muted small" id="fsInfo"></span><button class="btn sm" onclick="newFile()"><i data-ic="plus"></i>Новый</button></div>
       <div class="bar"><i id="fsBar"></i></div>
       <div class="list" id="fileList"></div>
     </div>
@@ -592,10 +1010,6 @@
 
 <!-- ================= СЕТЬ ================= -->
 <section class="page" id="p-net" hidden>
-  <div class="ph">
-    <div><h1>Сеть</h1><p>Подключение Wi-Fi и точка доступа</p></div>
-    <div class="ph-act"><button class="btn icon" onclick="refreshBtn(this, loadNet)" title="Обновить"><i data-ic="refresh"></i></button></div>
-  </div>
   <div class="grid">
     <div class="card">
       <div class="net-hero">
@@ -608,7 +1022,7 @@
       <div class="card-h stack"><h3>Сменить подключение</h3>
         <div class="seg" id="netSeg"><button data-seg="sta" class="active">Клиент</button><button data-seg="ap">Точка доступа</button></div></div>
       <label class="f"><span>SSID</span><input type="text" id="netSsid" placeholder="имя сети"></label>
-      <label class="f"><span>Пароль</span><span class="pw"><input type="password" id="netPass" placeholder="пароль"><button class="btn icon" onclick="togglePw('netPass', this)" title="Показать"><i data-ic="eye"></i></button></span></label>
+      <label class="f pw-row"><span>Пароль</span><span class="pw"><input type="password" id="netPass" placeholder="пароль"><button class="btn icon" onclick="togglePw('netPass', this)" title="Показать"><i data-ic="eye"></i></button></span></label>
       <label class="f"><span>mDNS имя</span><span class="sfx-field"><input type="text" id="netMdns" placeholder="myled" maxlength="15" pattern="[A-Za-z0-9_\-]+"><span class="sfx">.local</span></span></label>
       <p class="muted small f-hint">Латиница, цифры, _ и - (до 15 символов). Меняется сразу, без перезагрузки.</p>
       <p class="muted small" id="netHint">Устройство подключится к роутеру. После перезагрузки оно может получить новый IP.</p>
@@ -626,30 +1040,47 @@
 
 <!-- ================= СИСТЕМА ================= -->
 <section class="page" id="p-sys" hidden>
-  <div class="ph">
-    <div><h1>Система</h1><p>Ресурсы, настройки ленты и отладка API</p></div>
-    <div class="ph-act"><button class="btn icon" onclick="refreshBtn(this, loadInfo)" title="Обновить"><i data-ic="refresh"></i></button></div>
-  </div>
   <div class="grid">
     <div class="card">
-      <div class="card-h"><h3>Устройство</h3><span class="badge" id="sTemp"></span></div>
+      <div class="card-h"><h3>Устройство</h3></div>
       <div class="kv" style="margin-top:0" id="sKv"></div>
       <div class="mem"><div class="mem-h"><span>IRAM</span><span id="sIram"></span></div><div class="bar"><i id="sIramBar"></i></div></div>
       <div class="mem"><div class="mem-h"><span>PSRAM</span><span id="sPsram"></span></div><div class="bar"><i id="sPsramBar"></i></div></div>
+
+      <div class="card-sub">
+        <h4>Часовой пояс <span class="muted small" id="tzTime"></span></h4>
+        <label class="f"><span>UTC</span><select id="tzOffset"></select></label>
+        <div class="row mt" style="justify-content:flex-end">
+          <button class="btn primary" onclick="saveTz()"><i data-ic="check"></i>Сохранить</button>
+        </div>
+      </div>
+
+      <div class="card-sub">
+        <h4>Авторизация</h4>
+        <label class="f"><span>Логин</span><input type="text" id="authUser" maxlength="32" autocomplete="username"></label>
+        <label class="f pw-row"><span>Новый пароль</span><span class="pw"><input type="password" id="authPass" maxlength="64" autocomplete="new-password" placeholder="пусто — не менять"><button class="btn icon" onclick="togglePw('authPass', this)" title="Показать"><i data-ic="eye"></i></button></span></label>
+        <div class="row mt" style="justify-content:flex-end">
+          <button class="btn primary" onclick="saveAuth()"><i data-ic="check"></i>Сохранить</button>
+        </div>
+      </div>
+
+      <div class="row mt" style="justify-content:flex-end">
+        <button class="btn danger" onclick="restart()"><i data-ic="power"></i>Перезагрузить</button>
+      </div>
     </div>
     <div class="card">
       <div class="card-h"><h3>Настройки ленты</h3></div>
       <label class="f"><span>Светодиодов</span><input type="number" id="ledCount" min="1"></label>
       <label class="f"><span>Тип ленты</span><select id="ledModel"><option value="ws2812">WS2812 (5 В)</option><option value="ws2815">WS2815 (12 В)</option></select></label>
       <label class="f"><span>Порядок цветов</span><select id="ledPxFmt"><option value="grb">GRB</option><option value="rgb">RGB</option></select></label>
-      <div class="swrow mode-row"><span><b>Режим при старте</b><br><span class="muted small">автоматика или ручной; хранится в NVS, применяется сразу и после перезагрузки</span></span><span class="seg" id="modeSeg"><button type="button" data-manual="0">Автоматика</button><button type="button" data-manual="1">Ручной</button></span></div>
-      <label class="swrow"><span><b>Запоминать состояние</b><br><span class="muted small">save_mode — разрешить сохранение ручного состояния; включается запись при следующем изменении, автоматика не запоминается</span></span><span class="sw"><input type="checkbox" id="ledSave"><span></span></span></label>
+      <div class="swrow mode-row"><span><b>Режим при старте</b></span><span class="seg" id="modeSeg"><button type="button" data-manual="0">Автоматика</button><button type="button" data-manual="1">Ручной</button></span></div>
+      <label class="swrow"><span><b>Запоминать состояние</b></span><span class="sw"><input type="checkbox" id="ledSave"><span></span></span></label>
       <div class="row between mt"><span></span><button class="btn primary" onclick="applySettings()"><i data-ic="check"></i>Сохранить</button></div>
     </div>
         <div class="card">
       <div class="card-h"><h3>Сервер обновлений</h3></div>
       <label class="f"><span>Адрес (IP:порт)</span><input type="text" id="otaServer" placeholder="IP:порт" autocomplete="off"></label>
-      <label class="f"><span>Токен</span><span class="pw"><input type="password" id="otaToken" placeholder="до 32 символов" autocomplete="new-password"><button class="btn icon" onclick="togglePw('otaToken', this)" title="Показать"><i data-ic="eye"></i></button></span></label>
+      <label class="f pw-row"><span>Токен</span><span class="pw"><input type="password" id="otaToken" placeholder="до 32 символов" autocomplete="new-password"><button class="btn icon" onclick="togglePw('otaToken', this)" title="Показать"><i data-ic="eye"></i></button></span></label>
       <div class="row between mt">
         <span class="muted small" id="otaChk"></span>
         <span class="row">
@@ -659,8 +1090,8 @@
         </span>
       </div>
     </div>
-<div class="card danger-zone">
-      <div class="card-h"><h3>Обновление прошивки</h3><span class="badge acc" id="otaVer"></span></div>
+<div class="card">
+      <div class="card-h"><h3>Обновление прошивки</h3></div>
       <label class="file-pick">
         <input type="file" id="otaFile" accept=".bin,application/octet-stream">
         <i data-ic="file"></i>
@@ -671,21 +1102,13 @@
         <span class="muted small" id="otaStatus"></span>
         <button class="btn danger" id="otaBtn" onclick="uploadFirmware()" disabled><i data-ic="send"></i>Загрузить прошивку</button>
       </div>
-      <p class="muted small">После загрузки устройство перезагрузится. Если новая прошивка не запустится — загрузчик сам вернёт предыдущую.</p>
-    </div>
-    <div class="card danger-zone">
-      <div class="card-h"><h3>Перезагрузка</h3></div>
-      <p class="muted">Перезапуск контроллера. Страница сама дождётся, пока устройство вернётся в сеть.</p>
-      <button class="btn danger" onclick="restart()"><i data-ic="power"></i>Перезагрузить устройство</button>
+      <p class="muted small">После загрузки устройство перезагрузится.</p>
     </div>
   </div>
 </section>
 
 <!-- ================= КОНСОЛЬ ================= -->
 <section class="page" id="p-api" hidden>
-  <div class="ph">
-    <div><h1>Консоль</h1><p>Ручные запросы к API и лог всех запросов страницы — для отладки</p></div>
-  </div>
   <div class="grid">
     <div class="card span2">
       <div class="card-h"><h3>Запрос</h3></div>
@@ -707,6 +1130,18 @@
 </section>
 
 </main>
+
+<div class="login-screen" id="loginScreen" hidden>
+  <div class="login-card">
+    <div class="login-brand"><span class="logo-dot"></span><b>WebLed</b></div>
+    <h2>Вход</h2>
+    <p class="muted small">Введите логин и пароль устройства</p>
+    <label class="f"><span>Логин</span><input type="text" id="loginUser" autocomplete="username" maxlength="32"></label>
+    <label class="f"><span>Пароль</span><input type="password" id="loginPass" autocomplete="current-password" maxlength="64"></label>
+    <div class="login-err" id="loginErr"></div>
+    <button class="btn primary" id="loginBtn" onclick="doLogin()">Войти</button>
+  </div>
+</div>
 
 <div class="modal" id="modal" hidden>
   <div class="modal-box">
@@ -791,6 +1226,83 @@ function fmtBytes(n) {
 function store(k, v) { try { localStorage.setItem('webled.' + k, v); } catch (e) { } }
 function recall(k) { try { return localStorage.getItem('webled.' + k); } catch (e) { return null; } }
 
+let authHeader = recall('auth') || '';
+
+function makeBasicAuth(user, pass) {
+  const bytes = new TextEncoder().encode(user + ':' + pass);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return 'Basic ' + btoa(bin);
+}
+
+function setAuthHeader(value) {
+  authHeader = value;
+  store('auth', value);
+}
+
+function clearAuth() {
+  authHeader = '';
+  store('auth', '');
+}
+
+function showLogin() {
+  booted = false;
+  $('loginScreen').hidden = false;
+  $('loginErr').textContent = '';
+  $('loginPass').value = '';
+  setTimeout(() => $('loginUser').focus(), 50);
+}
+
+function hideLogin() {
+  $('loginScreen').hidden = true;
+}
+
+async function doLogin() {
+  const user = $('loginUser').value.trim();
+  const pass = $('loginPass').value;
+  const err = $('loginErr');
+  err.textContent = '';
+
+  if (!user || !pass) {
+    err.textContent = 'Введите логин и пароль';
+    return;
+  }
+
+  const btn = $('loginBtn');
+  btn.disabled = true;
+
+  try {
+    const header = makeBasicAuth(user, pass);
+    const r = await fetch('/api/auth', { headers: { Authorization: header } });
+    const data = await r.json().catch(() => ({}));
+    if (r.status === 401) {
+      err.textContent = 'Неверный логин или пароль';
+      return;
+    }
+    if (!r.ok || data.status === false) {
+      err.textContent = data.error || ('Ошибка: ' + r.status);
+      return;
+    }
+
+    setAuthHeader(header);
+    $('loginPass').value = '';
+    hideLogin();
+    boot();
+  } catch (e) {
+    err.textContent = 'Нет связи с устройством';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function logout() {
+  clearAuth();
+  location.reload();
+}
+
+$('loginUser').addEventListener('keydown', e => { if (e.key === 'Enter') $('loginPass').focus(); });
+$('loginPass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
 // заливка ползунка до текущего значения
 function paint(el) { el.style.setProperty('--p', ((el.value - el.min) / ((el.max - el.min) || 1) * 100) + '%'); }
 function paintAll(root = document) { if (!root) return; $$('input[type=range]', root).forEach(paint); }
@@ -846,10 +1358,14 @@ async function api(method, url, body, timeoutMs = 10000) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   const opts = { method, signal: ctrl.signal };
+  const headers = {};
   if (body !== undefined) {
-    opts.headers = { 'Content-Type': 'application/json' };
+    headers['Content-Type'] = 'application/json';
     opts.body = typeof body === 'string' ? body : JSON.stringify(body);
   }
+  if (authHeader) headers['Authorization'] = authHeader;
+  if (Object.keys(headers).length) opts.headers = headers;
+
   const t0 = performance.now();
   let status = 0, text = '', data = null;
   try {
@@ -865,7 +1381,13 @@ async function api(method, url, body, timeoutMs = 10000) {
   const ms = Math.round(performance.now() - t0);
   const ok = status >= 200 && status < 300 && !(data && data.status === false);
   setOnline(status > 0);
-  logEntry(method, url, opts.body, status, ms, text, ok);
+  if (status === 401) {
+    clearAuth();
+    showLogin();
+  }
+  // не светим пароль в логе запросов на вкладке «Консоль»
+  const loggedBody = url.startsWith('/api/auth') ? '[hidden]' : opts.body;
+  logEntry(method, url, loggedBody, status, ms, text, ok);
   return { ok, status, data, text };
 }
 
@@ -886,12 +1408,6 @@ function errText(r) {
   return (r.status || 'нет связи') + (r.data ? '' : ' ' + r.text);
 }
 
-async function refreshBtn(btn, fn) {
-  btn.classList.add('spin');
-  try { await fn(); } finally { btn.classList.remove('spin'); }
-}
-function refreshAll(btn) { return refreshBtn(btn, async () => { await loadLed(); await loadState(); await loadInfo(); }); }
-
 // ждём, пока устройство поднимется после перезагрузки
 async function waitReboot(note) {
   $('rbTitle').textContent = 'Перезагрузка';
@@ -904,7 +1420,10 @@ async function waitReboot(note) {
   while (Date.now() - t0 < 60000) {
     try {
       const c = new AbortController(), h = setTimeout(() => c.abort(), 2500);
-      const r = await fetch('/api/led', { signal: c.signal });
+      const r = await fetch('/api/led', {
+        signal: c.signal,
+        headers: authHeader ? { Authorization: authHeader } : {}
+      });
       clearTimeout(h);
       if (r.ok) {
         $('reboot').hidden = true;
@@ -953,8 +1472,20 @@ function applyPreview(el, mode, c, bright = 100, speed = 50) {
 }
 
 // ---------- лента ----------
-const PRESETS = ['#ffb46b', '#fff4e0', '#ffffff', '#ff2d2d', '#ff7a00', '#ffd400', '#9dff00', '#22e06b', '#00e5ff', '#2f6bff', '#6b3dff', '#b43dff', '#ff3dbb', '#ff6b8b'];
-$('presets').innerHTML = PRESETS.map(c => `<button class="preset" style="background:${c}" data-c="${c}" title="${c}"></button>`).join('');
+const DEFAULT_PRESETS = ['#ffb46b', '#ffffff', '#ff2d2d', '#ff7a00', '#ffd400', '#22e06b', '#00e5ff', '#2f6bff'];
+let customPresets = [];
+try {
+  const saved = JSON.parse(recall('presets') || '[]');
+  if (Array.isArray(saved)) customPresets = saved.filter(c => /^#[0-9a-f]{6}$/i.test(c));
+} catch (e) {}
+
+function renderPresets() {
+  $('presets').innerHTML =
+    DEFAULT_PRESETS.map(c => `<button class="preset" style="background:${c}" data-c="${c}" title="${c}"></button>`).join('') +
+    customPresets.map(c => `<span class="preset-wrap"><button class="preset" style="background:${c}" data-c="${c}" title="${c}"></button><button class="preset-del" data-del="${c}" title="Удалить">×</button></span>`).join('') +
+    '<button class="preset preset-add" id="presetAdd" title="Сохранить текущий цвет">+</button>';
+}
+renderPresets();
 
 async function loadLed() {
   const r = await api('GET', '/api/led');
@@ -982,25 +1513,24 @@ function renderModeChoice() {
   $$('#modeSeg [data-manual]').forEach(b => b.classList.toggle('active', (b.dataset.manual === '1') === manual));
 }
 
-let modeGridSig = '';
+let modeSelectSig = '';
 function renderLed() {
   if (!ledInfo) return;
   const s = ledInfo.state, manual = !!ledInfo.settings.manual;
   $('ledBanner').hidden = manual || !hasAutomations();
   $('ledManualBanner').hidden = !manual;
 
-  // карточки пересоздаём только когда поменялся сам список режимов — иначе при каждом
-  // движении ползунка/пипетки DOM сетки строился бы заново
-  const sig = modes.map(m => m.id_mode + ':' + m.name).join('|');
-  if (sig !== modeGridSig) {
-    modeGridSig = sig;
-    $('modeCount').textContent = modes.length + ' шт.';
-    // простая сетка: название и номер, без цветных превью
-    $('modeGrid').innerHTML = modes.map(m =>
-      `<button class="mode" data-mode="${m.id_mode}">
-         <span class="mode-name">${esc(m.name)}</span><span class="mode-id">#${m.id_mode}</span></button>`).join('');
+  // список пересобираем только когда поменялся сам набор режимов.
+  // 255 «Выкл» в списке не нужен — для этого на странице есть кнопка выключения
+  const selectable = modes.filter(m => m.id_mode !== 255);
+  const sig = selectable.map(m => m.id_mode + ':' + m.name).join('|');
+  if (sig !== modeSelectSig) {
+    modeSelectSig = sig;
+    $('modeCount').textContent = selectable.length + ' шт.';
+    $('modeSelect').innerHTML = '<option value="" disabled hidden>—</option>' +
+      selectable.map(m => `<option value="${m.id_mode}">${esc(m.name)} (#${m.id_mode})</option>`).join('');
   }
-  $$('#modeGrid [data-mode]').forEach(b => b.classList.toggle('active', +b.dataset.mode === s.mode));
+  $('modeSelect').value = s.mode === 255 ? '' : String(s.mode);
 
   const h = hex(s.color.r, s.color.g, s.color.b);
   setVal($('ledColor'), h);
@@ -1037,10 +1567,9 @@ async function postLed(body, quiet = false) {
 // одновременно: пока предыдущий в пути, новые значения складываются в pend и уходят
 // одним запросом после ответа. Иначе при медленном ответе ESP запросы копятся в очередь
 let pend = {}, pendT = null, pendBusy = false;
-function queueState(part, force) {
+function queueState(part) {
   Object.assign(ledInfo.state, part);
   renderLed(); renderHome();
-  if (!force && !$('ledLive').checked) return;
   Object.assign(pend, part);
   clearTimeout(pendT);
   pendT = setTimeout(flushState, 200);
@@ -1055,12 +1584,12 @@ async function flushState() {
   if (Object.keys(pend).length) flushState();
 }
 
-$('modeGrid').addEventListener('click', async e => {
-  const b = e.target.closest('[data-mode]');
-  if (!b) return;
-  const id = +b.dataset.mode;
+$('modeSelect').addEventListener('change', async e => {
+  const id = +e.target.value;
+  if (!id) { renderLed(); return; }
   const r = await postLed({ state: { mode: id } });
   if (r.ok) { ledInfo.state.mode = id; renderLed(); renderHome(); }
+  else renderLed();   // вернуть выбранное значение, если запрос отклонён
 });
 // input — только превью на странице; change — пипетку отпустили, отправляем итоговый цвет
 $('ledColor').addEventListener('input', e => {
@@ -1071,17 +1600,29 @@ $('ledColor').addEventListener('input', e => {
 $('ledColor').addEventListener('change', e => queueState({ color: rgb(e.target.value) }));
 $('ledBright').addEventListener('input', e => queueState({ brightness: +e.target.value }));
 $('ledSpeed').addEventListener('input', e => queueState({ speed: +e.target.value }));
-$('hBright').addEventListener('input', e => queueState({ brightness: +e.target.value }, true));
-$('presets').addEventListener('click', e => {
+$('presets').addEventListener('click', async e => {
+  const del = e.target.closest('[data-del]');
+  if (del) {
+    const yes = await ask('Удалить цвет?', del.dataset.del, 'Удалить', true);
+    if (!yes) return;
+    customPresets = customPresets.filter(c => c !== del.dataset.del);
+    store('presets', JSON.stringify(customPresets));
+    renderPresets();
+    return;
+  }
+  if (e.target.closest('#presetAdd')) {
+    const c = ($('ledColor').value || '').toLowerCase();
+    if (!/^#[0-9a-f]{6}$/.test(c)) return;
+    if (DEFAULT_PRESETS.includes(c) || customPresets.includes(c)) return toast('Такой цвет уже есть', 'warn');
+    customPresets.push(c);
+    store('presets', JSON.stringify(customPresets));
+    renderPresets();
+    toast('Цвет сохранён');
+    return;
+  }
   const b = e.target.closest('[data-c]');
-  if (b) queueState({ color: rgb(b.dataset.c) }, true);
+  if (b) queueState({ color: rgb(b.dataset.c) });
 });
-
-async function applyState() {
-  const s = ledInfo.state;
-  const r = await postLed({ state: { mode: s.mode, speed: s.speed, brightness: s.brightness, color: s.color } });
-  if (r.ok) toast('Применено');
-}
 
 async function togglePower() {
   const s = ledInfo.state;
@@ -1175,24 +1716,15 @@ async function sendPixels() {
 // ---------- обзор ----------
 function renderHome() {
   if (!ledInfo) return;
-  const s = ledInfo.state, st = ledInfo.settings;
-  const col = applyPreview($('hOrb'), s.mode, s.color, s.brightness, s.speed);
-  document.querySelector('.hero').style.setProperty('--heroGlow', s.mode === 255 ? 'rgba(91,140,255,.06)' : col.replace('rgb', 'rgba').replace(')', ',.22)'));
-  $('hMode').textContent = modeName(s.mode);
-  $('hMeta').textContent = s.mode === 255 ? `Лента выключена · ${st.led_count} LED`
-    : `Яркость ${s.brightness}% · скорость ${s.speed}% · ${st.led_count} LED`;
-  $('hPower').querySelector('span').textContent = s.mode === 255 ? 'Включить' : 'Выключить';
-  const mb = $('hManual');
-  mb.classList.toggle('on', !!st.manual);
-  mb.querySelector('span').textContent = st.manual ? 'Ручное: вкл' : 'Ручное управление';
-  setVal($('hBright'), s.brightness);
-  $('hBrightV').textContent = s.brightness + '%';
+  const mode = ledInfo.state.mode;
+  $('hMode').textContent = mode === 255 ? 'Лента выключена' : modeName(mode);
+  $('hControlMode').textContent = ledInfo.settings.manual ? 'Ручной режим' : 'Автоматика';
   renderHomeAutos();
 }
 
 function renderTiles() {
   if (lastInfo) {
-    const i = lastInfo, m = i.memory_info || {};
+    const i = lastInfo;
     const synced = i.time && +i.time.slice(0, 4) >= 2024;
     $('tTime').textContent = i.time ? i.time.slice(11) : '—';
     $('tTimeS').textContent = synced ? i.time.slice(0, 10) + ' · синхронизировано' : 'время не синхронизировано';
@@ -1200,22 +1732,7 @@ function renderTiles() {
     const tb = $('tTempBar');
     tb.classList.toggle('hot', i.cpu_temp > 65);
     tb.firstElementChild.style.width = Math.max(0, Math.min(100, (i.cpu_temp - 20) / 60 * 100)) + '%';
-    $('tIram').textContent = fmtBytes(m.iram_free);
-    $('tIramS').textContent = `свободно из ${fmtBytes(m.iram_total)} · минимум свободного ${fmtBytes(m.iram_min_free)}`;
-    $('tIramBar').style.width = (m.iram_total ? (1 - m.iram_free / m.iram_total) * 100 : 0) + '%';
-    $('sideTime').textContent = (i.time || '—') + (i.version ? ' · v' + i.version : '');
     $('topTime').textContent = i.time ? i.time.slice(11) : '';
-  }
-  const ls = lastState && lastState.light_sensor;
-  const lsActive = cfgOrig && cfgOrig.light_sensor && cfgOrig.light_sensor.is_active !== false;
-  if (!ls || !lsActive) {
-    $('tLight').textContent = '—';
-    $('tLightS').textContent = !ls ? 'датчик не настроен' : '🚫 датчик не активен';
-    $('tLightBar').style.width = '0';
-  } else {
-    $('tLight').textContent = ls.value;
-    $('tLightS').textContent = (ls.is_dark ? '🌙 темно' : '☀ светло') + (ls.applied ? ' · лента включена датчиком' : '');
-    $('tLightBar').style.width = Math.min(100, ls.value / 4095 * 100) + '%';
   }
   if (netInfo) {
     const sta = netInfo.mode && netInfo.mode.includes('STA');
@@ -1265,8 +1782,6 @@ async function loadState() {
   if (!r.data) { $('stRaw').textContent = errText(r); return; }
   lastState = r.data;
   $('stRaw').textContent = JSON.stringify(r.data, null, 2);
-  const t = 'обновлено ' + new Date().toLocaleTimeString();
-  $('sideUpd').textContent = t;
   renderTiles(); renderHomeAutos(); renderLed();
   if (cfgOrig) updateAuto();
 }
@@ -1280,7 +1795,7 @@ async function loadInfo() {
 }
 
 let stateTimer = setInterval(() => {
-  if (document.hidden || !booted || otaBusy) return;
+  if (!authHeader || document.hidden || !booted || otaBusy) return;
   loadState().then(loadInfo);
 }, 30000);
 
@@ -1294,10 +1809,8 @@ function memText(total, free, minFree) {
 function renderSys() {
   if (lastInfo) {
     const i = lastInfo, m = i.memory_info || {};
-    $('sTemp').textContent = i.cpu_temp != null ? i.cpu_temp.toFixed(1) + ' °C' : '';
-    $('sTemp').className = 'badge ' + (i.cpu_temp > 65 ? 'err' : 'acc');
-    $('otaVer').textContent = i.version ? 'сейчас v' + i.version : '';
-    $('sKv').innerHTML = `<span>Прошивка</span><span>${esc(i.version || '—')}</span><span>Время</span><span>${esc(i.time || '—')}</span><span>Светодиодов</span><span>${ledInfo ? ledInfo.settings.led_count : '—'}</span>`;
+    const temp = i.cpu_temp != null ? i.cpu_temp.toFixed(1) + ' °C' : '—';
+    $('sKv').innerHTML = `<span>Прошивка</span><span>${esc(i.version || '—')}</span><span>Время</span><span>${esc(i.time || '—')}</span><span>Температура</span><span>${temp}</span><span>Светодиодов</span><span>${ledInfo ? ledInfo.settings.led_count : '—'}</span>`;
     $('sIram').textContent = memText(m.iram_total, m.iram_free, m.iram_min_free);
     $('sIramBar').style.width = (m.iram_total ? (1 - m.iram_free / m.iram_total) * 100 : 0) + '%';
     $('sPsram').textContent = m.psram_total ? memText(m.psram_total, m.psram_free, m.psram_min_free) : 'нет';
@@ -1310,6 +1823,116 @@ function renderSys() {
     if (document.activeElement !== $('ledSave')) $('ledSave').checked = !!ledInfo.settings.save_mode;
     renderModeChoice();
   }
+}
+
+const THEMES = [
+  { id: 'dark', name: 'Тёмная', color: '#000000' },
+  { id: 'graphite', name: 'Графит', color: '#14171c' },
+  { id: 'light', name: 'Светлая', color: '#f2f5fa' },
+  { id: 'sand', name: 'Песок', color: '#f7f2e4' },
+  { id: 'sand-dark', name: 'Песок (тёмная)', color: '#171208' },
+  { id: 'rose', name: 'Роза', color: '#fbf1f1' },
+  { id: 'rose-dark', name: 'Роза (тёмная)', color: '#1a0d13' },
+  { id: 'mint', name: 'Мята', color: '#f0f7f1' },
+  { id: 'mint-dark', name: 'Мята (тёмная)', color: '#08130e' },
+  { id: 'wine', name: 'Вино', color: '#160b0d' },
+  { id: 'ocean', name: 'Океан', color: '#eef6fb' },
+  { id: 'lavender', name: 'Лаванда', color: '#f6f2fc' },
+  { id: 'midnight', name: 'Полночь', color: '#07101d' },
+];
+
+const THEME_COLORS = Object.fromEntries(THEMES.map(t => [t.id, t.color]));
+const THEME_SELECTS = ['themeSelect', 'themeSelectTop'];
+
+function fillThemeSelects() {
+  for (const id of THEME_SELECTS) {
+    const sel = $(id);
+    if (sel) sel.innerHTML = THEMES.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+  }
+}
+
+function applyTheme(name) {
+  const theme = THEME_COLORS[name] ? name : 'dark';
+  document.documentElement.dataset.theme = theme;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = THEME_COLORS[theme];
+  for (const id of THEME_SELECTS) {
+    const sel = $(id);
+    if (sel) sel.value = theme;
+  }
+  store('theme', theme);
+}
+
+function initTheme() {
+  fillThemeSelects();
+  const aliases = { amoled: 'dark', yellow: 'sand', red: 'rose', green: 'mint' };
+  const saved = recall('theme') || 'dark';
+  const theme = aliases[saved] || saved;
+  applyTheme(THEME_COLORS[theme] ? theme : 'dark');
+}
+
+for (const id of THEME_SELECTS) {
+  const sel = $(id);
+  if (sel) sel.addEventListener('change', e => applyTheme(e.target.value));
+}
+
+function tzLabel(minutes) {
+  const sign = minutes >= 0 ? '+' : '-';
+  const abs = Math.abs(minutes);
+  return 'UTC' + sign + String(Math.floor(abs / 60)).padStart(2, '0') + ':' + String(abs % 60).padStart(2, '0');
+}
+
+function fillTzOptions() {
+  const sel = $('tzOffset');
+  if (sel.options.length) return;
+  for (let m = -12 * 60; m <= 14 * 60; m += 15) {
+    const o = document.createElement('option');
+    o.value = String(m);
+    o.textContent = tzLabel(m);
+    sel.append(o);
+  }
+}
+
+async function loadTime() {
+  fillTzOptions();
+  const r = await api('GET', '/api/time');
+  if (!r.data) return;
+  $('tzOffset').value = String(r.data.offset_min);
+  $('tzTime').textContent = r.data.time || '';
+}
+
+async function saveTz() {
+  const offset_min = +$('tzOffset').value;
+  const r = await api('POST', '/api/time', { offset_min });
+  if (!r.ok) return toast('Часовой пояс: ' + errText(r), 'err');
+  toast('Часовой пояс сохранён');
+  await loadInfo();
+  await loadTime();
+}
+
+async function loadAuth() {
+  const r = await api('GET', '/api/auth');
+  if (!r.data) return;
+  if (document.activeElement !== $('authUser')) $('authUser').value = r.data.user || 'admin';
+}
+
+async function saveAuth() {
+  const user = $('authUser').value.trim();
+  const pass = $('authPass').value;
+  if (!user) return toast('Логин не может быть пустым', 'err');
+  if (user.length > 32) return toast('Логин длиннее 32 символов', 'err');
+  if (pass.length > 64) return toast('Пароль длиннее 64 символов', 'err');
+
+  const body = { user };
+  if (pass) body.pass = pass;
+
+  const r = await api('POST', '/api/auth', body);
+  if (!r.ok) return toast('Авторизация: ' + errText(r), 'err');
+
+  $('authPass').value = '';
+  clearAuth();
+  toast('Данные сохранены. Войдите заново.');
+  setTimeout(() => location.reload(), 1200);
 }
 
 async function loadOtaConfig() {
@@ -1349,16 +1972,83 @@ async function checkOta() {
   }
 }
 
-async function installOta() {
-  const r = await api('POST', '/api/ota/install');
-  if (r.ok) {
-    $('otaChk').textContent = 'Обновление запущено (мок)';
-    toast('Обновление запущено');
-  } else {
-    $('otaChk').textContent = 'Ошибка запуска обновления';
-    toast('Ошибка: ' + errText(r), 'err');
+async function otaStatusFetch(ms = 5000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const r = await fetch('/api/ota/status', {
+      signal: ctrl.signal,
+      headers: authHeader ? { Authorization: authHeader } : {}
+    });
+    const text = await r.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch (e) { }
+    return { ok: r.ok, status: r.status, data };
+  } catch (e) {
+    return { ok: false, status: 0, data: null };
+  } finally {
+    clearTimeout(t);
   }
 }
+
+async function installOta() {
+  if (!await ask('Обновить прошивку?',
+    'Устройство скачает прошивку с сервера и перезагрузится. Питание не выключать.',
+    'Обновить', true)) return;
+
+  const r = await api('POST', '/api/ota/install');
+  if (!r.ok) {
+    toast('Ошибка запуска обновления: ' + errText(r), 'err');
+    return;
+  }
+
+  otaBusy = true;
+  $('otaInstallBtn').hidden = true;
+  $('otaChk').textContent = 'Загрузка прошивки...';
+
+  $('otaOvBar').style.width = '0';
+  $('otaOvText').textContent = 'Загрузка прошивки с сервера...';
+  $('otaOvPct').textContent = '';
+  $('otaOverlay').hidden = false;
+
+  const t0 = Date.now();
+  let last = 0;
+
+  while (Date.now() - t0 < 10 * 60 * 1000) {
+    await sleep(700);
+    const s = await otaStatusFetch();
+
+    // нет ответа — скорее всего устройство уже перезагружается
+    if (!s.ok) break;
+
+    const d = s.data || {};
+    if (d.error) {
+      otaBusy = false;
+      $('otaOverlay').hidden = true;
+      $('otaInstallBtn').hidden = false;
+      $('otaChk').textContent = 'Ошибка обновления';
+      toast('Ошибка обновления: ' + d.error, 'err');
+      return;
+    }
+
+    if (typeof d.progress === 'number' && d.progress >= 0) {
+      last = Math.max(0, Math.min(100, d.progress));
+      $('otaOvBar').style.width = last + '%';
+      $('otaOvPct').textContent = last + '%';
+      $('otaChk').textContent = 'Загрузка прошивки: ' + last + '%';
+      $('otaOvText').textContent = last >= 100
+        ? 'Прошивка загружена, идёт проверка и перезагрузка...'
+        : 'Загрузка прошивки с сервера...';
+    }
+
+    if (!d.in_progress && last >= 100) break;
+  }
+
+  otaBusy = false;
+  $('otaOverlay').hidden = true;
+  waitReboot('Прошивка загружена. Устройство перезагружается...');
+}
+
 
 async function applySettings() {
   const r = await api('POST', '/api/led', { settings: {
@@ -1423,6 +2113,7 @@ function uploadFirmware() {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', '/api/ota/local-upload');
       xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      if (authHeader) xhr.setRequestHeader('Authorization', authHeader);
       xhr.timeout = 15 * 60 * 1000;   // на слабом Wi-Fi со сном загрузка может идти минутами
       xhr.upload.onprogress = ev => {
         if (!ev.lengthComputable) return;
@@ -2101,13 +2792,20 @@ function updateAuto() {
 
   // приоритеты — показываем только активные (и сконфигурированные)
   const present = Object.keys(AUTO).filter(k => cfg[k] && cfg[k].is_active !== false);
-  $('prioScale').innerHTML = present.length === 0
-    ? '<div class="empty" style="padding:14px">Нет активных автоматик</div>'
-    : present.map((k, i) => {
-        const left = Math.max(10, Math.min(90, cfg[k].priority / 2.55));
-        const top = present.length === 1 ? 50 : 20 + (i * 60) / (present.length - 1);
-        return `<div class="pchip" style="left:${left}%;top:${top}%">${AUTO[k].icon} ${AUTO[k].title} · ${cfg[k].priority}</div>`;
-      }).join('');
+  const scale = $('prioScale');
+  if (present.length === 0) {
+    scale.style.height = '52px';
+    scale.innerHTML = '<div class="empty" style="padding:14px">Нет активных автоматик</div>';
+  } else {
+    // высота зависит от количества плашек: иначе они накладываются друг на друга
+    scale.style.height = (present.length === 1 ? 52 : present.length * 32 + 8) + 'px';
+    const ordered = present.slice().sort((a, b) => cfg[b].priority - cfg[a].priority);
+    scale.innerHTML = ordered.map((k, i) => {
+      const left = Math.max(10, Math.min(90, cfg[k].priority / 2.55));
+      const top = ordered.length === 1 ? 50 : ((i + 0.5) * 100 / ordered.length);
+      return `<div class="pchip" style="left:${left}%;top:${top}%">${AUTO[k].icon} ${AUTO[k].title} · ${cfg[k].priority}</div>`;
+    }).join('');
+  }
   let pt = 'ручное управление ставит всех на паузу';
   if (present.length === 2) {
     const [x, y] = present.map(k => cfg[k]), [nx, ny] = present.map(k => AUTO[k].title);
@@ -2382,25 +3080,44 @@ function route() {
   document.title = 'WebLed · ' + document.querySelector(`[data-nav=${page}] span`).textContent;
   window.scrollTo(0, 0);
   paintAll();
-  if (page === 'sys' && booted) loadOtaConfig();
+  if (page === 'sys' && booted) { loadOtaConfig(); loadAuth(); loadTime(); }
   if (page === 'fx' && booted && !files) loadFiles().then(() => { if (!fxCurrent) newFile(); });
 }
 window.addEventListener('hashchange', route);
 
 async function boot() {
+  if (!authHeader) { showLogin(); return; }
+
+  try {
+    const r = await fetch('/api/auth', { headers: { Authorization: authHeader } });
+    if (r.status === 401) {
+      clearAuth();
+      showLogin();
+      return;
+    }
+    if (!r.ok) { showLogin(); return; }
+  } catch (e) {
+    showLogin();
+    return;
+  }
+
   // строго по очереди: на слабом Wi-Fi со сном параллельные соединения мешают друг другу
   // и загрузка встаёт целиком (проверено на контроллере с сигналом -71 dBm)
   await loadLed();
   await loadState();
   await loadInfo();
   await loadOtaConfig();
+  await loadAuth();
+  await loadTime();
   await loadConfig();
   await loadNet();
+  if (!authHeader) return;
   booted = true;
   files = null;
   route();
 }
 
+initTheme();
 icons();
 route();
 boot();

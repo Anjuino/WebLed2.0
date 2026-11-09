@@ -14,12 +14,14 @@ info:
     - Query-переключатели (`?info`, `?state`, …): важно только наличие ключа, но нужен `=`:
       `?info=` или `?info=1`. Вся query-строка — не длиннее 128 байт.
     - Тело POST обязательно и меньше 8192 байт.
-    - Аутентификации и CORS нет.
+    - Все эндпоинты защищены HTTP Basic Auth (по умолчанию `admin` / `admin`).
+    - CORS нет.
 
     Открыть в Swagger UI: https://editor.swagger.io → File → Import file.
     Запросы прямо из редактора не пройдут (нет CORS) — удобно Postman/Insomnia: импорт этого файла.
 
-security: []   # аутентификации нет
+security:
+  - basicAuth: []
 
 servers:
   - url: http://{host}
@@ -117,6 +119,84 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/StatusError" }
               example: { status: false, error: "работает автоматика. Включите ручное управление" }
+        "400": { $ref: "#/components/responses/BodyError" }
+
+  # ------------------------------------------------------------------ AUTH
+  /api/auth:
+    get:
+      operationId: getAuthUser
+      tags: [auth]
+      summary: Текущий логин
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      operationId: setAuthUser
+      tags: [auth]
+      summary: Сменить логин/пароль
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user]
+              properties:
+                user: { type: string, maxLength: 32 }
+                pass: { type: string, maxLength: 64, description: "Пусто — пароль не менять" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatusOk" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "400": { $ref: "#/components/responses/BodyError" }
+
+  # ------------------------------------------------------------------ TIME
+  /api/time:
+    get:
+      operationId: getTime
+      tags: [time]
+      summary: Текущий часовой пояс и время
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  offset_min: { type: integer, minimum: -720, maximum: 840, description: "Смещение от UTC в минутах" }
+                  time: { type: string, example: "2026-11-09 12:34" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      operationId: setTime
+      tags: [time]
+      summary: Сменить часовой пояс
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [offset_min]
+              properties:
+                offset_min: { type: integer, minimum: -720, maximum: 840, description: "420 = UTC+7, -300 = UTC-5" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatusOk" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "400": { $ref: "#/components/responses/BodyError" }
 
   # ------------------------------------------------------------------ DEVICE
@@ -453,7 +533,16 @@ paths:
                 failed: { value: { started: false, error: "Failed to start OTA task" } }
 
 components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
   responses:
+    Unauthorized:
+      description: "Нет или неверный заголовок Authorization: Basic"
+      content:
+        text/plain:
+          schema: { type: string }
     BodyError:
       description: |
         Ошибка тела запроса (plain text): `Empty body`, `Body too large` (≥ 8192 байт),

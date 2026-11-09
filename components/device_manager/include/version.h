@@ -2,9 +2,9 @@
 #include <stdint.h>
 
 #define FW_VERSION_MAJOR 1
-#define FW_VERSION_MINOR 0
-#define FW_VERSION_PATCH 2
-#define FW_VERSION_BUILD 1
+#define FW_VERSION_MINOR 1
+#define FW_VERSION_PATCH 0
+#define FW_VERSION_BUILD 20
 
 #define __FW_STR_(x) #x
 #define __FW_STR(x)  __FW_STR_(x)

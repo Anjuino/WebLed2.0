@@ -1,4 +1,5 @@
 #include "wifimanager.h"
+#include "auth.h"
 #include "esp_system.h"
 #include "DeviceManager.h"
 #include "mdns.h"
@@ -573,6 +574,7 @@ void wifimanager::parse_command(char* json, size_t len) {
 }
 
 static esp_err_t api_network_handler_get(httpd_req_t *req) {
+  if (!auth_check(req)) return ESP_OK;
   wifimanager *wifi = (wifimanager*)req->user_ctx;
   cJSON *root = cJSON_CreateObject();
   if(!root) return send_resp_json(NULL, req);
@@ -650,6 +652,7 @@ static esp_err_t api_network_handler_get(httpd_req_t *req) {
 }
 
 static esp_err_t api_network_handler_post(httpd_req_t *req) {
+  if (!auth_check(req)) return ESP_OK;
   wifimanager *wifi = (wifimanager*)req->user_ctx;
   char *buf = nullptr;
   if(getjson(req, &buf) == ESP_OK) {

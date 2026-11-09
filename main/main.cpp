@@ -1,9 +1,12 @@
 #include "stdint.h"
 #include "stdbool.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/gpio.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "nvs_flash.h"
 
 #include "DeviceManager.h"
 #include "led.h"
@@ -17,6 +20,62 @@ class server *serv = nullptr;
 class device *contorller = nullptr;
 
 static const char *TAG = "main";
+
+static constexpr gpio_num_t FACTORY_RESET_GPIO = GPIO_NUM_7;
+static constexpr uint32_t FACTORY_RESET_HOLD_MS = 10000;
+static constexpr uint32_t FACTORY_RESET_POLL_MS = 250;
+
+static void factory_reset_task(void *)
+{
+  gpio_config_t cfg = {};
+  cfg.pin_bit_mask = 1ULL << FACTORY_RESET_GPIO;
+  cfg.mode = GPIO_MODE_INPUT;
+  cfg.pull_up_en = GPIO_PULLUP_ENABLE;
+  cfg.pull_down_en = GPIO_PULLDOWN_DISABLE;
+  cfg.intr_type = GPIO_INTR_DISABLE;
+
+  if (gpio_config(&cfg) != ESP_OK) {
+    ESP_LOGE(TAG, "factory reset: gpio_config failed");
+    vTaskDelete(nullptr);
+    return;
+  }
+
+  bool pressed = false;
+  TickType_t pressed_at = 0;
+
+  while (true) {
+    bool low = gpio_get_level(FACTORY_RESET_GPIO) == 0;
+
+    if (low && !pressed) {
+      pressed = true;
+      pressed_at = xTaskGetTickCount();
+      ESP_LOGI(TAG, "factory reset: button pressed, hold 10s");
+    } else if (!low && pressed) {
+      pressed = false;
+      ESP_LOGI(TAG, "factory reset: cancelled");
+    } else if (pressed &&
+               (xTaskGetTickCount() - pressed_at) >= pdMS_TO_TICKS(FACTORY_RESET_HOLD_MS)) {
+      ESP_LOGW(TAG, "factory reset: erasing NVS");
+
+      esp_err_t err = ESP_FAIL;
+      for (int i = 0; i < 3; i++) {
+        err = nvs_flash_erase();
+        if (err == ESP_OK) break;
+        ESP_LOGE(TAG, "factory reset: nvs_flash_erase failed: %s", esp_err_to_name(err));
+        vTaskDelay(pdMS_TO_TICKS(500));
+      }
+
+      if (err == ESP_OK) {
+        ESP_LOGW(TAG, "factory reset: NVS erased, restarting");
+      } else {
+        ESP_LOGE(TAG, "factory reset: failed, restarting anyway");
+      }
+      esp_restart();
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(FACTORY_RESET_POLL_MS));
+  }
+}
 
 void check_app()
 {
@@ -57,6 +116,11 @@ void check_app()
 extern "C" void app_main ()
 {
   NVSProxy::nvs_init();
+
+  if (xTaskCreate(factory_reset_task, "factory_reset", 3 * 1024, nullptr, 2, nullptr) != pdPASS) {
+    ESP_LOGE(TAG, "failed to start factory reset task");
+  }
+
   check_app();
 
   char serial[32];
@@ -68,10 +132,12 @@ extern "C" void app_main ()
     ESP_LOGW(TAG, "device: not provisioned");
   }
 
+  contorller = new device();
+
   wifi = new wifimanager();
   wifi->init();
 
-  uint64_t timer = (esp_timer_get_time() / 1000) + 30000;
+  uint64_t timer = (esp_timer_get_time() / 1000) + 15000;
   while(!wifi->ready()) {
     vTaskDelay(pdMS_TO_TICKS(1000));
     ESP_LOGI(TAG, "wifi init...");
@@ -81,7 +147,7 @@ extern "C" void app_main ()
     }
   }
 
-  serv = new server(wifi, new device());
+  serv = new server(wifi, contorller);
   esp_err_t ret = serv->start();
   if (ret != ESP_OK) {
     ESP_LOGE(TAG, "Failed to start server");

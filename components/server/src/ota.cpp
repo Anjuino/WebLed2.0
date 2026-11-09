@@ -1,4 +1,5 @@
 #include "ota.h"
+#include "auth.h"
 #include "helper_server.h"
 #include "esp_log.h"
 #include "esp_http_client.h"
@@ -7,15 +8,15 @@
 #include "cJSON.h"
 #include <string.h>
 #include <stdlib.h>
+#include <new>
 #include "private.h"
 #include "version.h"
 #include "device.h"
 
 // Адрес сервера обновлений хранится в NVS без схемы: "203.0.113.5:5000".
 // Схема всегда https. Если адрес не задан — удалённое обновление недоступно.
-#define OTA_PATH_FIRMWARE  "/getfirmware"
-#define OTA_PATH_ACK       "/ack"
 #define OTA_PATH_CHECK     "/api/firmware/check"
+#define OTA_PATH_DOWNLOAD  "/api/firmware/download"
 #define OTA_TOKEN_MAX      32
 
 static const char *TAG = "OTA";
@@ -135,6 +136,8 @@ esp_err_t OtaManager::write_stream(size_t total_size, int (*reader)(void *ctx, c
     return err;
   }
 
+  set_progress(0);
+
   char buf[4096];
   size_t remaining = total_size;
   size_t progress = 0;
@@ -161,8 +164,8 @@ esp_err_t OtaManager::write_stream(size_t total_size, int (*reader)(void *ctx, c
     progress  += recv_len;
 
     size_t pct = (progress * 100) / total_size;
-    if (pct != last_pct && (pct % 10) == 0) {
-      ESP_LOGI(TAG, "OTA progress: %u%%", (unsigned)pct);
+    if (pct != last_pct) {
+      set_progress((int)pct);
       last_pct = pct;
     }
   }
@@ -180,131 +183,103 @@ esp_err_t OtaManager::write_stream(size_t total_size, int (*reader)(void *ctx, c
   }
 
   ESP_LOGI(TAG, "OTA write successful (%u bytes)", (unsigned)total_size);
+  set_progress(100);
   return ESP_OK;
 }
 
-static void ota_post_json_log(const char *url, const char *body, const char *what) {
-  esp_http_client_config_t cfg = {};
-  cfg.url = url;
-  cfg.method = HTTP_METHOD_POST;
-  cfg.timeout_ms = 2000;
-  cfg.cert_pem = cert_remote_ca_crt_start;
-  cfg.skip_cert_common_name_check = true; // адрес сервера прошивок ещё не зафиксирован — проверяем только CA
-
-  esp_http_client_handle_t client = esp_http_client_init(&cfg);
-  if (!client) {
-    ESP_LOGW(TAG, "%s: client init failed", what);
-    return;
-  }
-  esp_http_client_set_header(client, "Content-Type", "application/json");
-  esp_http_client_set_post_field(client, body, strlen(body));
-
-  esp_err_t err = esp_http_client_perform(client);
-  if (err == ESP_OK) {
-    ESP_LOGD(TAG, "%s: HTTP %d", what, esp_http_client_get_status_code(client));
-  } else {
-    ESP_LOGW(TAG, "%s: %s", what, esp_err_to_name(err));
-  }
-  esp_http_client_cleanup(client);
+void OtaManager::set_error(const std::string &e) {
+  std::lock_guard<std::mutex> lock(m_status_mutex);
+  m_last_error = e;
 }
 
-static void ota_notify_server(const std::string &base,
-                              const char *chipid,
-                              bool success, const char *error_msg) {
-  char body[256];
-  if (success) {
-    snprintf(body, sizeof(body), "{\"status\":\"installed\",\"chipid\":\"%s\"}",
-             chipid ? chipid : "?");
-  } else {
-    snprintf(body, sizeof(body),
-             "{\"status\":\"failed\",\"error\":\"%s\",\"chipid\":\"%s\"}",
-             error_msg ? error_msg : "unknown",
-             chipid ? chipid : "?");
-  }
-  std::string url = base + OTA_PATH_ACK;
-  ota_post_json_log(url.c_str(), body, "OTA ack");
+std::string OtaManager::last_error() {
+  std::lock_guard<std::mutex> lock(m_status_mutex);
+  return m_last_error;
 }
 
-esp_err_t OtaManager::fetch_from_url(const char *url) {
+esp_err_t OtaManager::install_from_url(const char *url, const char *version) {
   if (!url || !*url) {
-    ESP_LOGE(TAG, "fetch_from_url: empty URL");
+    ESP_LOGE(TAG, "install_from_url: empty URL");
     return ESP_ERR_INVALID_ARG;
   }
 
   uint8_t mac[6] = {};
   esp_efuse_mac_get_default(mac);
-  char chip_id[24];
-  snprintf(chip_id, sizeof(chip_id), "%02X-%02X-%02X-%02X-%02X-%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  char chip[24];
+  snprintf(chip, sizeof(chip), "%02X-%02X-%02X-%02X-%02X-%02X",
+           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
-  char fetch_url[256];
-  int nu = snprintf(fetch_url, sizeof(fetch_url),
-                    "%s%scurrent=%s&chipid=%s",
-                    url,
-                    strchr(url, '?') ? "&" : "?",
-                    firmware_version(), chip_id);
-  if (nu <= 0 || nu >= (int)sizeof(fetch_url)) {
-    ESP_LOGE(TAG, "fetch_from_url: URL too long");
-    return ESP_ERR_INVALID_ARG;
-  }
-
-  ESP_LOGI(TAG, "Remote OTA: current=%s, chipid=%s", firmware_version(), chip_id);
-  ESP_LOGI(TAG, "Remote OTA: GET %s", fetch_url);
+  ESP_LOGI(TAG, "OTA install: GET %s", url);
 
   esp_http_client_config_t cfg = {};
-  cfg.url = fetch_url;
-  cfg.timeout_ms = 30000;
+  cfg.url = url;
+  cfg.timeout_ms = 60000;
   cfg.buffer_size = 4096;
   cfg.buffer_size_tx = 4096;
   cfg.cert_pem = cert_remote_ca_crt_start;
-  cfg.skip_cert_common_name_check = true; // адрес сервера прошивок ещё не зафиксирован — проверяем только CA
+  cfg.skip_cert_common_name_check = true;
 
   esp_http_client_handle_t client = esp_http_client_init(&cfg);
   if (!client) {
-    ESP_LOGE(TAG, "esp_http_client_init failed");
+    ESP_LOGE(TAG, "OTA install: client init failed");
     return ESP_FAIL;
   }
 
+  esp_http_client_set_header(client, "X-Device-UID", chip);
+  esp_http_client_set_header(client, "X-Device-Version",
+                             (version && *version) ? version : firmware_version());
+  esp_http_client_set_header(client, "X-Device-Token", token().c_str());
+
+  char serial[32] = {};
+  device_meta_read_serial(serial, sizeof(serial));
+  esp_http_client_set_header(client, "X-Device-SN", serial);
+  esp_http_client_set_header(client, "Accept", "application/octet-stream");
+
   esp_err_t err = esp_http_client_open(client, 0);
   if (err != ESP_OK) {
-    ESP_LOGE(TAG, "esp_http_client_open failed: %s", esp_err_to_name(err));
+    ESP_LOGE(TAG, "OTA install: open failed: %s", esp_err_to_name(err));
     esp_http_client_cleanup(client);
     return err;
   }
 
   int content_length = esp_http_client_fetch_headers(client);
-  int status_code  = esp_http_client_get_status_code(client);
-  ESP_LOGI(TAG, "HTTP status=%d, content-length=%d", status_code, content_length);
+  int status = esp_http_client_get_status_code(client);
+  ESP_LOGI(TAG, "OTA install: HTTP %d, content-length %d", status, content_length);
 
-  if (status_code != 200 || content_length <= 0) {
-    ESP_LOGW(TAG, "Remote OTA: нет прошивки (status=%d, len=%d)", status_code, content_length);
+  if (status != 200) {
+    ESP_LOGE(TAG, "OTA install: server returned HTTP %d", status);
+    esp_http_client_close(client);
     esp_http_client_cleanup(client);
-    return ESP_OK;
+    return ESP_ERR_NOT_FOUND;
+  }
+  if (content_length <= 0) {
+    ESP_LOGE(TAG, "OTA install: bad content-length %d", content_length);
+    esp_http_client_close(client);
+    esp_http_client_cleanup(client);
+    return ESP_ERR_INVALID_SIZE;
   }
 
-  if ((size_t)content_length > esp_ota_get_next_update_partition(NULL)->size) {
-    ESP_LOGE(TAG, "Remote OTA: firmware %d > partition size", content_length);
+  size_t expected = update_size();
+  if (expected > 0 && expected != (size_t)content_length) {
+    ESP_LOGE(TAG, "OTA install: size mismatch: expected %u, got %d",
+             (unsigned)expected, content_length);
+    esp_http_client_close(client);
     esp_http_client_cleanup(client);
     return ESP_ERR_INVALID_SIZE;
   }
 
   err = write_stream((size_t)content_length, remote_ota_chunk_reader, client);
+  esp_http_client_close(client);
   esp_http_client_cleanup(client);
 
-  if (err == ESP_OK) {
-    ESP_LOGI(TAG, "Remote OTA success, notifying server");
-    ota_notify_server(base_url(), chip_id, true, nullptr);
-    ESP_LOGI(TAG, "Rebooting in 2s...");
-    vTaskDelay(3000 / portTICK_PERIOD_MS);
-    esp_restart();
-  } else {
-    const char *err_name = esp_err_to_name(err);
-    ESP_LOGE(TAG, "Remote OTA failed: %s", err_name);
-    ota_notify_server(base_url(), chip_id, false, err_name);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "OTA install failed: %s", esp_err_to_name(err));
   }
   return err;
 }
 
 static esp_err_t local_ota_upload_handler(httpd_req_t *req) {
+  if (!auth_check(req)) return ESP_OK;
   OtaManager *ota = (OtaManager*)req->user_ctx;
   if (!ota) {
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OTA context null");
@@ -338,38 +313,40 @@ static esp_err_t local_ota_upload_handler(httpd_req_t *req) {
   return ret;
 }
 
-static void ota_remote_task(void *arg) {
-  OtaManager *ota = (OtaManager *)arg;
-  std::string url = ota->base_url() + OTA_PATH_FIRMWARE;
-  ESP_LOGI(TAG, "Remote OTA: GET %s", url.c_str());
-  ota->fetch_from_url(url.c_str());
-  ota->set_in_progress(false);
+struct OtaInstallCtx {
+  OtaManager *ota;
+  std::string version;
+};
+
+static void ota_install_task(void *arg) {
+  OtaInstallCtx *ctx = (OtaInstallCtx *)arg;
+  OtaManager *ota = ctx->ota;
+  std::string version = ctx->version;
+  delete ctx;
+
+  std::string url = ota->base_url() + OTA_PATH_DOWNLOAD + "?version=" + version;
+
+  ota->set_error("");
+  ota->set_progress(0);
+
+  esp_err_t err = ota->install_from_url(url.c_str(), version.c_str());
+
+  if (err == ESP_OK) {
+    ota->set_in_progress(false);
+    ESP_LOGI(TAG, "OTA install complete, rebooting in 3s...");
+    vTaskDelay(3000 / portTICK_PERIOD_MS);
+    esp_restart();
+  } else {
+    ota->set_error(esp_err_to_name(err));
+    ota->set_progress(-1);
+    ota->set_in_progress(false);
+    ESP_LOGE(TAG, "OTA install failed: %s", esp_err_to_name(err));
+  }
   vTaskDelete(NULL);
 }
 
-static esp_err_t remote_ota_upload_handler(httpd_req_t *req) {
-  OtaManager *ota = (OtaManager *)req->user_ctx;
-
-  if (ota->in_progress()) {
-    return send_json_status(req, "started", false, "error", "OTA already in progress");
-  }
-
-  if (ota->server().empty()) {
-    return send_json_status(req, "started", false, "error", "OTA server not configured");
-  }
-
-  ota->set_in_progress(true);
-  BaseType_t ok = xTaskCreate(ota_remote_task, "ota_remote", 10 * 1024, ota, 8, NULL);
-  if (ok != pdPASS) {
-    ota->set_in_progress(false);
-    return send_json_status(req, "started", false, "error", "Failed to start OTA task");
-  }
-
-  ESP_LOGI(TAG, "Remote OTA task started, server=%s", ota->server().c_str());
-  return send_json_status(req, "started", true, "message", "OTA fetch started in background");
-}
-
 static esp_err_t ota_config_get_handler(httpd_req_t *req) {
+  if (!auth_check(req)) return ESP_OK;
   OtaManager *ota = (OtaManager *)req->user_ctx;
   cJSON *root = cJSON_CreateObject();
   if (!root) return send_json_status(req, "status", false, "error", "OOM");
@@ -379,6 +356,7 @@ static esp_err_t ota_config_get_handler(httpd_req_t *req) {
 }
 
 static esp_err_t ota_config_set_handler(httpd_req_t *req) {
+  if (!auth_check(req)) return ESP_OK;
   OtaManager *ota = (OtaManager *)req->user_ctx;
 
   char *buf = nullptr;
@@ -433,12 +411,10 @@ static std::string ota_check_remote(OtaManager *ota) {
   uint8_t mac[6] = {};
   esp_efuse_mac_get_default(mac);
   char chip[24];
-  snprintf(chip, sizeof(chip), "%02X-%02X-%02X-%02X-%02X-%02X",
-           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  snprintf(chip, sizeof(chip), "%02X-%02X-%02X-%02X-%02X-%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
   char url[320];
-  int n = snprintf(url, sizeof(url), "%s%s?chipid=%s&version=%s",
-                   ota->base_url().c_str(), OTA_PATH_CHECK, chip, firmware_version());
+  int n = snprintf(url, sizeof(url), "%s%s", ota->base_url().c_str(), OTA_PATH_CHECK);
   if (n <= 0 || n >= (int)sizeof(url)) return ota_error_json("url too long");
 
   esp_http_client_config_t cfg = {};
@@ -451,9 +427,14 @@ static std::string ota_check_remote(OtaManager *ota) {
   esp_http_client_handle_t client = esp_http_client_init(&cfg);
   if (!client) return ota_error_json("client init failed");
 
-  if (!ota->token().empty()) {
-    esp_http_client_set_header(client, "X-Device-Token", ota->token().c_str());
-  }
+  esp_http_client_set_header(client, "X-Device-UID", chip);
+  esp_http_client_set_header(client, "X-Device-Version", firmware_version());
+  esp_http_client_set_header(client, "X-Device-Token", ota->token().c_str());
+
+  char serial[32];
+  device_meta_read_serial(serial, sizeof(serial));
+  esp_http_client_set_header(client, "X-Device-SN", serial);
+
   esp_http_client_set_header(client, "Accept", "application/json");
 
   esp_err_t err = esp_http_client_open(client, 0);
@@ -506,6 +487,7 @@ static std::string ota_check_remote(OtaManager *ota) {
 }
 
 static esp_err_t ota_check_handler(httpd_req_t *req) {
+  if (!auth_check(req)) return ESP_OK;
   OtaManager *ota = (OtaManager *)req->user_ctx;
 
   if (ota->server().empty()) {
@@ -520,13 +502,58 @@ static esp_err_t ota_check_handler(httpd_req_t *req) {
 }
 
 static esp_err_t ota_install_handler(httpd_req_t *req) {
+  if (!auth_check(req)) return ESP_OK;
   OtaManager *ota = (OtaManager *)req->user_ctx;
+
   if (ota->in_progress()) {
     return send_json_status(req, "started", false, "error", "OTA already in progress");
   }
-  
-  ESP_LOGI(TAG, "OTA install requested (mock)");
-  return send_json_status(req, "started", true, "message", "mock install started");
+
+  if (!ota->update_available()) {
+    return send_json_status(req, "started", false, "error", "no update available, run check first");
+  }
+
+  std::string version = ota->update_version();
+  if (version.empty()) {
+    return send_json_status(req, "started", false, "error", "update version is empty");
+  }
+
+  OtaInstallCtx *ctx = new (std::nothrow) OtaInstallCtx{ota, version};
+  if (!ctx) {
+    return send_json_status(req, "started", false, "error", "OOM");
+  }
+
+  // Результат проверки остаётся до следующего check: при ошибке можно повторить.
+  ota->set_error("");
+  ota->set_progress(0);
+  ota->set_in_progress(true);
+
+  BaseType_t ok = xTaskCreate(ota_install_task, "ota_install", 12 * 1024, ctx, 8, NULL);
+  if (ok != pdPASS) {
+    ota->set_in_progress(false);
+    ota->set_progress(-1);
+    delete ctx;
+    return send_json_status(req, "started", false, "error", "failed to start OTA task");
+  }
+
+  ESP_LOGI(TAG, "OTA install started, version=%s", version.c_str());
+  return send_json_status(req, "started", true, "message", "OTA download started");
+}
+
+static esp_err_t ota_status_handler(httpd_req_t *req) {
+  if (!auth_check(req)) return ESP_OK;
+  OtaManager *ota = (OtaManager *)req->user_ctx;
+
+  cJSON *root = cJSON_CreateObject();
+  if (!root) return send_json_status(req, "status", false, "error", "OOM");
+
+  cJSON_AddBoolToObject(root, "in_progress", ota->in_progress());
+  cJSON_AddNumberToObject(root, "progress", ota->progress());
+
+  std::string err = ota->last_error();
+  if (!err.empty()) cJSON_AddStringToObject(root, "error", err.c_str());
+
+  return send_resp_json(root, req);
 }
 
 void OtaManager::register_handlers(httpd_handle_t httpd) {
@@ -537,14 +564,6 @@ void OtaManager::register_handlers(httpd_handle_t httpd) {
     .user_ctx = this
   };
   httpd_register_uri_handler(httpd, &local_ota_upload);
-
-  httpd_uri_t remote_ota_upload = {
-    .uri = "/api/ota/remote-upload",
-    .method = HTTP_POST,
-    .handler = remote_ota_upload_handler,
-    .user_ctx = this
-  };
-  httpd_register_uri_handler(httpd, &remote_ota_upload);
 
   httpd_uri_t ota_config_get = {
     .uri = "/api/ota/config",
@@ -577,4 +596,12 @@ void OtaManager::register_handlers(httpd_handle_t httpd) {
     .user_ctx = this
   };
   httpd_register_uri_handler(httpd, &ota_install);
+
+  httpd_uri_t ota_status = {
+    .uri = "/api/ota/status",
+    .method = HTTP_GET,
+    .handler = ota_status_handler,
+    .user_ctx = this
+  };
+  httpd_register_uri_handler(httpd, &ota_status);
 }
