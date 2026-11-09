@@ -61,7 +61,7 @@ jobs:
         run: |
           cd /home/andrey/Project/webled-server/FirmwareImport
           echo "Importing firmware into DB..."
-          dotnet run -- --repo /home/andrey/Project/WebLed2.0 --token 555707
+          dotnet run -- --repo /home/andrey/Project/WebLed2.0 --token Ncyy0h3sLs219xiH
           echo "✅ Firmware import completed"
 
           {
