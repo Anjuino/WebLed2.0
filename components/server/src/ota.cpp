@@ -549,7 +549,6 @@ static esp_err_t ota_install_handler(httpd_req_t *req) {
   // Версия установки хранится в OtaManager: одновременно идёт только одно обновление.
   ota->set_install_version(version);
 
-  // Результат проверки остаётся до следующего check: при ошибке можно повторить.
   ota->begin_update();
 
   BaseType_t ok = xTaskCreate(ota_install_task, "ota_install", 12 * 1024, ota, 8, NULL);
