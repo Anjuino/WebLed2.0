@@ -9,6 +9,8 @@
 #include "esp_http_server.h"
 #include "nvs_proxy.h"
 
+class led;
+
 class OtaManager {
 
   private:
@@ -26,6 +28,8 @@ class OtaManager {
     std::mutex m_status_mutex;
     std::string m_last_error;
 
+    led *m_led = nullptr;
+
     void load_config();
 
   public:
@@ -38,6 +42,13 @@ class OtaManager {
 
     int progress() const { return m_progress.load(); }
     void set_progress(int v) { m_progress.store(v); }
+
+    void set_led(led *l) { m_led = l; }
+
+    // Начало любого обновления (remote/local): гасим ленту и помечаем процесс.
+    void begin_update();
+    // Конец обновления: ok=false — возвращаем ленту, ok=true — оставляем выключенной до ребута.
+    void end_update(bool ok);
 
     void set_error(const std::string &e);
     std::string last_error();

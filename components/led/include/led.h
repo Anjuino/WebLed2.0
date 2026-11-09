@@ -54,6 +54,7 @@ class led {
     TaskHandle_t task_handle = nullptr;
     std::atomic<uint16_t> requested_count{0};   // != 0 — задача Led пересоздаст ленту
     std::atomic<bool> requested_reinit{false};   // сменился тип ленты — задача Led пересоздаст ленту
+    std::atomic<bool> suspended{false};          // OTA-режим: лента ничего не выводит
 
     void reinit_strip(uint16_t new_led_count);
 
@@ -123,6 +124,11 @@ class led {
     void wait(uint32_t ms) { ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(ms)); };
 
     void off(void);
+
+    // OTA-режим: пока флаг стоит, лента не выводит ничего (ни эффекты, ни ручные команды).
+    void suspend();
+    void resume();
+    bool is_suspended() const { return suspended.load(); }
 
 };
 

@@ -2015,7 +2015,7 @@ async function installOta() {
   let last = 0;
 
   while (Date.now() - t0 < 10 * 60 * 1000) {
-    await sleep(700);
+    await sleep(1000);
     const s = await otaStatusFetch();
 
     // нет ответа — скорее всего устройство уже перезагружается

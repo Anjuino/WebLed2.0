@@ -12,6 +12,7 @@
 #include "private.h"
 #include "version.h"
 #include "device.h"
+#include "led.h"
 
 // Адрес сервера обновлений хранится в NVS без схемы: "203.0.113.5:5000".
 // Схема всегда https. Если адрес не задан — удалённое обновление недоступно.
@@ -197,6 +198,19 @@ std::string OtaManager::last_error() {
   return m_last_error;
 }
 
+void OtaManager::begin_update() {
+  if (m_led) m_led->suspend();
+  set_error("");
+  set_progress(0);
+  set_in_progress(true);
+}
+
+void OtaManager::end_update(bool ok) {
+  if (!ok && m_led) m_led->resume();
+  set_in_progress(false);
+  if (!ok) set_progress(-1);
+}
+
 esp_err_t OtaManager::install_from_url(const char *url, const char *version) {
   if (!url || !*url) {
     ESP_LOGE(TAG, "install_from_url: empty URL");
@@ -296,14 +310,22 @@ static esp_err_t local_ota_upload_handler(httpd_req_t *req) {
     return ESP_FAIL;
   }
 
+  if (ota->in_progress()) {
+    return send_json_status(req, "success", false, "error", "OTA already in progress");
+  }
+
   ESP_LOGI(TAG, "Local OTA upload started, %u bytes", (unsigned)content_len);
 
+  ota->begin_update();
   esp_err_t err = ota->write_stream(content_len, local_ota_chunk_reader, req);
   if (err != ESP_OK) {
+    ota->end_update(false);
     ESP_LOGE(TAG, "Local OTA failed: %s", esp_err_to_name(err));
     httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OTA failed");
     return ESP_FAIL;
   }
+
+  ota->end_update(true);
 
   esp_err_t ret = send_json_status(req, "success", true, "message", "OTA update successful");
 
@@ -326,20 +348,17 @@ static void ota_install_task(void *arg) {
 
   std::string url = ota->base_url() + OTA_PATH_DOWNLOAD + "?version=" + version;
 
-  ota->set_error("");
-  ota->set_progress(0);
-
   esp_err_t err = ota->install_from_url(url.c_str(), version.c_str());
 
   if (err == ESP_OK) {
-    ota->set_in_progress(false);
+    // Ленту не включаем: она останется погашенной до перезагрузки.
+    ota->end_update(true);
     ESP_LOGI(TAG, "OTA install complete, rebooting in 3s...");
     vTaskDelay(3000 / portTICK_PERIOD_MS);
     esp_restart();
   } else {
     ota->set_error(esp_err_to_name(err));
-    ota->set_progress(-1);
-    ota->set_in_progress(false);
+    ota->end_update(false);
     ESP_LOGE(TAG, "OTA install failed: %s", esp_err_to_name(err));
   }
   vTaskDelete(NULL);
@@ -524,14 +543,11 @@ static esp_err_t ota_install_handler(httpd_req_t *req) {
   }
 
   // Результат проверки остаётся до следующего check: при ошибке можно повторить.
-  ota->set_error("");
-  ota->set_progress(0);
-  ota->set_in_progress(true);
+  ota->begin_update();
 
   BaseType_t ok = xTaskCreate(ota_install_task, "ota_install", 12 * 1024, ctx, 8, NULL);
   if (ok != pdPASS) {
-    ota->set_in_progress(false);
-    ota->set_progress(-1);
+    ota->end_update(false);
     delete ctx;
     return send_json_status(req, "started", false, "error", "failed to start OTA task");
   }

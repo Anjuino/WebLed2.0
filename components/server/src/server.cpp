@@ -184,6 +184,7 @@ esp_err_t server::start() {
   };
   httpd_register_uri_handler(m_server, &index_uri);
 
+  m_ota.set_led(controller ? controller->get_led() : nullptr);
   m_ota.register_handlers(m_server);
   wifi->register_handlers(m_server);
   controller->register_handlers(m_server);

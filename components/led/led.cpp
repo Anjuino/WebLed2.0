@@ -157,6 +157,8 @@ void led::reinit_strip(uint16_t new_led_count)
 
 void led::set_pixel(uint16_t pixel_count, uint8_t r, uint8_t g, uint8_t b)
 {
+  if (suspended.load()) return;
+
   if(pixel_count >= led_count) {
     ESP_LOGI(TAG, "Номер светодиода %lu больше чем общее количество %lu", pixel_count, led_count);
     return;
@@ -181,6 +183,11 @@ void led::task()
 
     const LedEffect *fx = find_effect(mode);
 
+    if (suspended.load()) {
+      ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(500));
+      continue;
+    }
+
     if (fx && fx->continuous) {
       fx->apply(this, fx->user_data);
     } else {
@@ -192,12 +199,31 @@ void led::task()
 
 void led::show(void) 
 {
+  if (suspended.load()) return;
   led_strip_refresh(led_strip);
 }
 
 void led::off(void)
 {
   led_strip_clear(led_strip);
+}
+
+void led::suspend()
+{
+  suspended.store(true);
+  if (led_strip) {
+    led_strip_clear(led_strip);
+    led_strip_refresh(led_strip);
+  }
+  refresh();
+  ESP_LOGW(TAG, "LED suspended (OTA mode)");
+}
+
+void led::resume()
+{
+  suspended.store(false);
+  refresh();
+  ESP_LOGW(TAG, "LED resumed");
 }
 
 void led::update_field(uint8_t &field, uint8_t new_value, const char *log_name, const char *key, bool persist, bool &need_commit)
@@ -210,7 +236,7 @@ void led::update_field(uint8_t &field, uint8_t new_value, const char *log_name, 
   ESP_LOGI(TAG, "Установка %s: %d", log_name, new_value);
   field = new_value;
 
-  if (!persist || !save_mode) return;
+  if (!persist || !save_mode || suspended.load()) return;
 
   if (settings.set(key, new_value)) {
     need_commit = true;
