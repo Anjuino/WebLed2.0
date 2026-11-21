@@ -1070,7 +1070,7 @@ try {
     </div>
     <div class="card">
       <div class="card-h"><h3>Настройки ленты</h3></div>
-      <label class="f"><span>Светодиодов</span><input type="number" id="ledCount" min="1"></label>
+      <label class="f"><span>Светодиодов</span><input type="number" id="ledCount" min="1" max="3000"></label>
       <label class="f"><span>Тип ленты</span><select id="ledModel"><option value="ws2812">WS2812 (5 В)</option><option value="ws2815">WS2815 (12 В)</option></select></label>
       <label class="f"><span>Порядок цветов</span><select id="ledPxFmt"><option value="grb">GRB</option><option value="rgb">RGB</option></select></label>
       <div class="swrow mode-row"><span><b>Режим при старте</b></span><span class="seg" id="modeSeg"><button type="button" data-manual="0">Автоматика</button><button type="button" data-manual="1">Ручной</button></span></div>
@@ -1472,7 +1472,8 @@ function applyPreview(el, mode, c, bright = 100, speed = 50) {
 }
 
 // ---------- лента ----------
-const DEFAULT_PRESETS = ['#ffb46b', '#ffffff', '#ff2d2d', '#ff7a00', '#ffd400', '#22e06b', '#00e5ff', '#2f6bff'];
+// стандартные чистые цвета: на ленте выглядят так же, как в плашке
+const DEFAULT_PRESETS = ['#ff0000', '#ff8000', '#ffff00', '#00ff00', '#00ffff', '#0000ff', '#8000ff', '#ffffff'];
 let customPresets = [];
 try {
   const saved = JSON.parse(recall('presets') || '[]');
@@ -1957,8 +1958,23 @@ async function checkOta() {
   const r = await api('GET', '/api/ota/check', undefined, 15000);
   if (!r.ok) {
     $('otaInstallBtn').hidden = true;
-    $('otaChk').textContent = 'Ошибка проверки';
-    return toast('Ошибка проверки: ' + errText(r), 'err');
+
+    let label;
+    if (r.status === 0) {
+      label = 'Сервер обновлений недоступен';
+    } else if (r.status === 401) {
+      label = 'Неверный токен проекта';
+    } else if (r.status >= 500) {
+      label = 'Ошибка сервера обновлений';
+    } else {
+      const e = (r.data && r.data.error) || r.text || '';
+      label = /CONNECT|TIMEOUT|HANDSHAKE|CERT|FETCH|DNS|NOT_FOUND/i.test(e)
+        ? 'Сервер обновлений недоступен'
+        : 'Ошибка проверки: ' + (e || 'неизвестная');
+    }
+
+    $('otaChk').textContent = label;
+    return toast(label, 'err');
   }
   const d = r.data || {};
   if (d.update) {
@@ -2026,7 +2042,13 @@ async function installOta() {
       otaBusy = false;
       $('otaOverlay').hidden = true;
       $('otaInstallBtn').hidden = false;
-      toast('Ошибка обновления: ' + d.error, 'err');
+
+      const e = d.error || '';
+      const label = /CONNECT|TIMEOUT|HANDSHAKE|CERT|FETCH|DNS|NOT_FOUND/i.test(e)
+        ? 'Сервер обновлений недоступен'
+        : 'Ошибка обновления: ' + (e || 'неизвестная');
+
+      toast(label, 'err');
       return;
     }
 
@@ -2049,8 +2071,12 @@ async function installOta() {
 
 
 async function applySettings() {
+  const count = +$('ledCount').value;
+  if (!Number.isInteger(count) || count < 1 || count > 3000) {
+    return toast('Светодиодов: 1…3000', 'err');
+  }
   const r = await api('POST', '/api/led', { settings: {
-    led_count: +$('ledCount').value,
+    led_count: count,
     save_mode: $('ledSave').checked,
     led_model: $('ledModel').value,
     pixel_format: $('ledPxFmt').value,
@@ -2369,6 +2395,7 @@ const AUTO = {
   }
 };
 const ADC_MAX = 4095;
+const MAX_HOLD = 2 * 60 * 60;   // 7200 с — верхняя граница удержания
 const HOLD_PRESETS = [10, 30, 60, 180, 300, 600, 1800, 0];   // 0 — до повторного нажатия
 const MOTION_HOLD_PRESETS = [10, 30, 60, 180, 300, 600];
 const DAY_NAMES = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
@@ -2496,7 +2523,7 @@ function cardHtml(k) {
     specific = `<div class="grp">
       <div class="grp-t">Держать после нажатия <span class="big" data-show="button.action.hold"></span></div>
       <div class="chips">${HOLD_PRESETS.map(s => `<button class="chip" data-hold="${s}">${s ? human(s) : '∞ до нажатия'}</button>`).join('')}</div>
-      <label class="f"><span>Секунд</span><input type="number" min="0" data-k="button.action.hold"></label>
+      <label class="f"><span>Секунд</span><input type="number" min="0" max="7200" data-k="button.action.hold"></label>
       <div class="muted small">0 — держать, пока кнопку не нажмут ещё раз.</div></div>
     <div class="grp">
       <div class="grp-t">Повторное нажатие
@@ -2507,7 +2534,7 @@ function cardHtml(k) {
     specific = `<div class="grp">
       <div class="grp-t">Держать после движения <span class="big" data-show="motion.action.hold"></span></div>
       <div class="chips">${MOTION_HOLD_PRESETS.map(s => `<button class="chip" data-mhold="${s}">${human(s)}</button>`).join('')}</div>
-      <label class="f"><span>Секунд</span><input type="number" min="1" data-k="motion.action.hold"></label>
+      <label class="f"><span>Секунд</span><input type="number" min="1" max="7200" data-k="motion.action.hold"></label>
       <div class="muted small">Каждое движение запускает отсчёт заново; пока датчик видит человека, лента не гаснет.</div></div>
     <div class="grp">
       ${ls ? `<div class="grp-t">Датчик освещения <button class="btn sm ghost" data-mlrm="1">Убрать</button></div>
@@ -3028,10 +3055,10 @@ function validateConfig() {
       if (f === 'mode') { if (!(led.mode >= 0)) errs.push(`${T}: ${f} должен быть числом`); return; }
       if (led[f] < 0 || led[f] > 100) errs.push(`${T}: ${f} 0…100`);
     });
-    if (k === 'button' && !(c.action.hold >= 0)) errs.push(`${T}: время удержания — 0 или больше`);
+    if (k === 'button' && !(c.action.hold >= 0 && c.action.hold <= MAX_HOLD)) errs.push(`${T}: время удержания — 0…7200 с`);
     if (k === 'button' && c.action.hold === 0 && c.action.repeat !== 'release') errs.push(`${T}: «до повторного нажатия» работает только с повтором «Отпустить»`);
     if (k === 'light_sensor' && c.action.dark === c.action.light) errs.push(`${T}: пороги «темно» и «светло» совпадают`);
-    if (k === 'motion' && !(c.action.hold >= 1)) errs.push(`${T}: время удержания — 1 с или больше`);
+    if (k === 'motion' && !(c.action.hold >= 1 && c.action.hold <= MAX_HOLD)) errs.push(`${T}: время удержания — 1…7200 с`);
     if (k === 'motion' && c.action.light_sensor && c.action.light_sensor.dark === c.action.light_sensor.light) errs.push(`${T}: пороги «темно» и «светло» совпадают`);
   });
   return errs;

@@ -52,7 +52,8 @@ void i_motion::from_json(cJSON *json) {
   if(action) {
     cJSON *j_hold = cJSON_GetObjectItem(action, "hold");
     if (cJSON_IsNumber(j_hold) && j_hold->valueint > 0) {
-      hold = j_hold->valueint;
+      // больше MAX_HOLD_SEC — ограничиваем, чтобы не переполнить таймер
+      hold = (j_hold->valueint > (int)MAX_HOLD_SEC) ? MAX_HOLD_SEC : (uint32_t)j_hold->valueint;
     }
 
     cJSON *j_light = cJSON_GetObjectItem(action, "light_sensor");
@@ -113,6 +114,13 @@ void i_motion::from_json(cJSON *json) {
 }
 
 void i_motion::start() {
+  // Старые прошивки могли сохранить больше MAX_HOLD_SEC — ограничиваем до
+  // создания таймера, иначе период может переполниться вплоть до нуля.
+  if (hold > MAX_HOLD_SEC) {
+    ESP_LOGW(TAG, "hold %lu > %lu — ограничиваю", (unsigned long)hold, (unsigned long)MAX_HOLD_SEC);
+    hold = MAX_HOLD_SEC;
+  }
+
   hold_timer = xTimerCreate("motion_hold", pdMS_TO_TICKS(hold * 1000), pdFALSE, this, on_timer_cb);
   if (!hold_timer) ESP_LOGE(TAG, "timer create failed");
 

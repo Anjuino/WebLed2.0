@@ -69,6 +69,24 @@ device::~device()
 
 }
 
+// Проверка полей конфига автоматики, которые нельзя сохранять как есть.
+// Сейчас это только hold: слишком большое значение переполняет период
+// таймера FreeRTOS и может уронить устройство при следующей загрузке.
+static const char *validate_automation_section(const char *key, cJSON *item) {
+  cJSON *action = cJSON_GetObjectItem(item, "action");
+  if (!cJSON_IsObject(action)) return nullptr;
+
+  cJSON *hold = cJSON_GetObjectItem(action, "hold");
+  if (!cJSON_IsNumber(hold)) return nullptr;
+
+  int min_hold = (strcmp(key, "motion") == 0) ? 1 : 0;
+  int v = hold->valueint;
+  if (v < min_hold || v > (int)Automation::MAX_HOLD_SEC) {
+    return (min_hold == 1) ? "hold: 1..7200 sec" : "hold: 0..7200 sec";
+  }
+  return nullptr;
+}
+
 static esp_err_t api_device_handler_post(httpd_req_t *req) {
   if (!auth_check(req)) return ESP_OK;
   device *contorller = (device*)req->user_ctx;
@@ -88,6 +106,17 @@ static esp_err_t api_device_handler_post(httpd_req_t *req) {
       { "schedule",     KEY_SCHEDULE_CONFIG },
       { "motion",       KEY_MOTION_CONFIG },
     };
+
+    // Сначала проверяем все секции, чтобы не сохранить половину конфига.
+    for (const auto &s : sections) {
+      cJSON *item = cJSON_GetObjectItem(root, s.json_key);
+      if (!cJSON_IsObject(item)) continue;
+      const char *verr = validate_automation_section(s.json_key, item);
+      if (verr) {
+        cJSON_Delete(root);
+        return send_json_status(req, "status", false, "error", verr);
+      }
+    }
 
     const char *failed = nullptr;
     bool saved = false;
@@ -279,9 +308,23 @@ static esp_err_t api_led_control_handler(httpd_req_t *req) {
       return ESP_FAIL;
     }
 
+    // Проверяем led_count до любых изменений: слишком большое значение
+    // сохранялось бы в NVS и приводило к падению при создании ленты.
+    cJSON *settings = cJSON_GetObjectItem(root, "settings");
+    cJSON *led_count = settings ? cJSON_GetObjectItem(settings, "led_count") : nullptr;
+    if (cJSON_IsNumber(led_count)) {
+      int n = led_count->valueint;
+      if (n < 1 || n > (int)led::MAX_LED_COUNT) {
+        char msg[32];
+        snprintf(msg, sizeof(msg), "led_count: 1..%u", (unsigned)led::MAX_LED_COUNT);
+        cJSON_Delete(root);
+        return send_json_status(req, "status", false, "error", msg);
+      }
+    }
+
     // settings.manual читаем до остальных изменений, чтобы в одном запросе
     // можно было включить ручное управление и сразу поменять ленту
-    cJSON *manual = cJSON_GetObjectItem(cJSON_GetObjectItem(root, "settings"), "manual");
+    cJSON *manual = cJSON_GetObjectItem(settings, "manual");
     if(cJSON_IsBool(manual)) controller->set_manual(cJSON_IsTrue(manual));
 
     // запрос меняет ленту, если пришёл state или leds_arr
@@ -291,10 +334,11 @@ static esp_err_t api_led_control_handler(httpd_req_t *req) {
     // если есть автоматика, менять ленту с панели можно только в ручном режиме
     bool blocked = changes_led && !controller->is_manual() && controller->has_automations();
 
-    cJSON *settings = cJSON_GetObjectItem(root, "settings");
     if(settings) {
-      cJSON *led_count = cJSON_GetObjectItem(settings, "led_count");
-      if(cJSON_IsNumber(led_count)) wLed->update_led_count(led_count->valueint);
+      if (cJSON_IsNumber(led_count) && !wLed->update_led_count((uint16_t)led_count->valueint)) {
+        cJSON_Delete(root);
+        return send_json_status(req, "status", false, "error", "led_count save failed");
+      }
 
       cJSON *save_mode = cJSON_GetObjectItem(settings, "save_mode");
       if(cJSON_IsBool(save_mode)) wLed->set_save_mode(save_mode->valueint);

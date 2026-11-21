@@ -193,7 +193,7 @@ esp_err_t server::start() {
   esp_err_t mdns_err = mdns_init();
   if (mdns_err != ESP_OK) {
     ESP_LOGE(TAG, "mdns_init failed: %s", esp_err_to_name(mdns_err));
-    return mdns_err;
+    //return mdns_err;
   }
 
   std::string hostname = wifi->get_mdns_name();

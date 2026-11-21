@@ -66,6 +66,15 @@ led::led() : settings(STORAGE_LED, false)
     b = settings.get<uint8_t>(KEY_LED_COLOR_B, 0);
     ESP_LOGI(TAG, "Загружено из памяти: LEDs=%u, Скорость=%u, Яркость=%u, Режим=%u, Режим сохранения %s", led_count, speed, brightness, mode, save_mode ? "ON" : "OFF");
   }
+
+  // Старые прошивки могли сохранить любое значение. Приводим его к допустимому
+  // диапазону до создания ленты, иначе init() упадёт в ESP_ERROR_CHECK.
+  if (led_count == 0 || led_count > MAX_LED_COUNT) {
+    uint16_t fixed = (led_count == 0) ? 1 : MAX_LED_COUNT;
+    ESP_LOGW(TAG, "led_count %u вне диапазона 1..%u — ставлю %u", led_count, MAX_LED_COUNT, fixed);
+    led_count = fixed;
+    settings.set(KEY_LED_COUNT, led_count, true);
+  }
 }
 
 led::~led()
@@ -84,6 +93,10 @@ led::~led()
 
 bool led::init()
 {
+  // Защита на случай, если led_count изменили в обход update_led_count().
+  if (led_count == 0) led_count = 1;
+  if (led_count > MAX_LED_COUNT) led_count = MAX_LED_COUNT;
+
   led_strip_config_t strip_config = {};
   strip_config.strip_gpio_num = 4;                   //TODO поправить номер пина, добавить в настройку 2 для esp32wroom
   strip_config.max_leds = led_count;
@@ -108,7 +121,10 @@ bool led::init()
 
 bool led::update_led_count(uint16_t new_led_count)
 {
-  if (new_led_count == 0) return false;
+  if (new_led_count == 0 || new_led_count > MAX_LED_COUNT) {
+    ESP_LOGW(TAG, "led_count %u вне диапазона 1..%u", new_led_count, MAX_LED_COUNT);
+    return false;
+  }
 
   // то же количество — не пересоздаём ленту и не пишем в NVS.
   // requested_count проверяем отдельно: в очереди может уже лежать другое

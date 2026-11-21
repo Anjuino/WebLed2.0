@@ -40,6 +40,10 @@ class Automation {
 
   public:
 
+    // Максимальное время удержания ленты автоматикой (2 часа). Ограничение не
+    // даёт переполнить расчёт периода таймера FreeRTOS при больших значениях.
+    static constexpr uint32_t MAX_HOLD_SEC = 2 * 60 * 60;
+
     Automation(device *_dev) { dev = _dev; };
     virtual ~Automation() = default;
 

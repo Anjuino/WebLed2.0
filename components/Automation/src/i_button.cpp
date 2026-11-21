@@ -55,7 +55,8 @@ void i_button::from_json(cJSON *json) {
   if(action) {
     cJSON *j_hold = cJSON_GetObjectItem(action, "hold");
     if (cJSON_IsNumber(j_hold) && j_hold->valueint >= 0) {
-      hold = j_hold->valueint;   // 0 — держать до повторного нажатия
+      // 0 — держать до повторного нажатия; больше MAX_HOLD_SEC — ограничиваем
+      hold = (j_hold->valueint > (int)MAX_HOLD_SEC) ? MAX_HOLD_SEC : (uint32_t)j_hold->valueint;
     }
 
     cJSON *j_repeat = cJSON_GetObjectItem(action, "repeat");
@@ -120,6 +121,13 @@ void i_button::start() {
   if (hold == 0 && repeat == repeat_t::extend) {
     ESP_LOGW(TAG, "hold=0 (до повторного нажатия) с repeat=extend: использую release");
     repeat = repeat_t::release;
+  }
+
+  // Старые прошивки могли сохранить больше MAX_HOLD_SEC — ограничиваем до
+  // создания таймера, иначе период может переполниться вплоть до нуля.
+  if (hold > MAX_HOLD_SEC) {
+    ESP_LOGW(TAG, "hold %lu > %lu — ограничиваю", (unsigned long)hold, (unsigned long)MAX_HOLD_SEC);
+    hold = MAX_HOLD_SEC;
   }
 
   if (hold > 0) {

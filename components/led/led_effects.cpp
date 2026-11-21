@@ -131,13 +131,14 @@ static void fire(led *self, void *)
   self->wait(frame_ms(self, 120, 15));
 }
 
+// дыхание: кривая как раньше (мягкий разгон), но теперь гаснет ровно в ноль
 static void breathe(led *self, void *)
 {
   static uint16_t phase = 0;   // 0..511
   uint16_t count = self->get_count_led();
 
   uint16_t tri = phase < 256 ? phase : 511 - phase;
-  uint8_t level = std::max<uint32_t>(6, tri * tri / 255);
+  uint8_t level = tri * tri / 255;
   for (uint16_t i = 0; i < count; i++) set_level(self, i, level);
   self->show();
 
@@ -310,7 +311,7 @@ static void confetti(led *self, void *)
   hue++;
 
   draw_canvas(self);
-  self->wait(frame_ms(self, 60, 10));
+  self->wait(frame_ms(self, 100, 10));
 }
 
 // точка качается туда-обратно по синусу, меняя цвет, и оставляет шлейф
@@ -541,6 +542,228 @@ static void police(led *self, void *)
   self->wait(frame_ms(self, 200, 70));
 }
 
+// салют: из случайной точки разлетаются цветные искры с коротким шлейфом
+static void fireworks(led *self, void *)
+{
+  const int N = 16;
+  struct spark_t { float pos, vel; uint8_t life, hue; };
+  static spark_t sp[N];
+  static uint8_t delay = 0;
+  uint16_t count = self->get_count_led();
+  ensure_canvas(count);
+
+  bool active = false;
+  for (int s = 0; s < N; s++) if (sp[s].life) { active = true; break; }
+
+  if (!active) {
+    if (delay > 0) {
+      delay--;
+    } else {
+      uint8_t hue = rnd(256);
+      float center = count * (0.25f + rnd(51) / 100.0f);   // 0.25..0.75 длины
+      for (int s = 0; s < N; s++) {
+        sp[s].pos = center;
+        sp[s].vel = (s & 1 ? 1.0f : -1.0f) * (0.12f + rnd(100) / 180.0f);
+        sp[s].life = 170 + rnd(86);
+        sp[s].hue = hue + rnd(40);
+      }
+      delay = 8 + rnd(40);
+    }
+  }
+
+  fade_canvas(190);
+  float k = speed_k(self);
+  for (int s = 0; s < N; s++) {
+    if (!sp[s].life) continue;
+    sp[s].pos += sp[s].vel * k;
+    sp[s].vel *= 0.97f;
+    sp[s].life = sp[s].life > 6 ? sp[s].life - 6 : 0;
+    int32_t idx = (int32_t)(sp[s].pos + 0.5f);
+    if (idx >= 0 && idx < count) add_px(canvas[idx], hsv(sp[s].hue, 220, sp[s].life));
+  }
+
+  draw_canvas(self);
+  self->wait(frame_ms(self, 40, 10));
+}
+
+// плавная смена цвета: вся лента горит одним оттенком, который медленно плывёт
+static void color_fade(led *self, void *)
+{
+  static float hue = 0;
+  uint16_t count = self->get_count_led();
+
+  rgb8_t c = hsv((uint8_t)hue);
+  for (uint16_t i = 0; i < count; i++) self->set_pixel(i, c.r, c.g, c.b);
+  self->show();
+
+  hue += 0.25f * speed_k(self);
+  if (hue >= 255.0f) hue -= 255.0f;
+  self->wait(20);
+}
+
+// гирлянда: каждый светодиод «дышит» сам по себе, в своём ритме
+static void garland(led *self, void *)
+{
+  static std::vector<uint16_t> ph;
+  static std::vector<uint8_t> steps;
+  uint16_t count = self->get_count_led();
+
+  if (ph.size() != count) {
+    ph.assign(count, 0);
+    steps.assign(count, 0);
+    for (uint16_t i = 0; i < count; i++) {
+      ph[i] = rnd(512);
+      steps[i] = 1 + rnd(3);
+    }
+  }
+
+  for (uint16_t i = 0; i < count; i++) {
+    uint16_t tri = ph[i] < 256 ? ph[i] : 511 - ph[i];
+    set_level(self, i, tri * tri / 255);
+    ph[i] = (ph[i] + steps[i]) % 512;
+  }
+  self->show();
+  self->wait(frame_ms(self, 40, 10));
+}
+
+// туннель: кольца сбегаются к центру, ближе к нему они чаще — эффект перспективы
+static void tunnel(led *self, void *)
+{
+  static float t = 0;
+  uint16_t count = self->get_count_led();
+  uint16_t center = count / 2;
+
+  for (uint16_t i = 0; i < count; i++) {
+    float d = (float)(i >= center ? (int)i - center : (int)center - i);
+    float phase = 14.0f / (d + 1.0f) - t;
+    float v = 0.5f + 0.5f * cosf(phase);
+    v *= v * (1.0f - d / (count * 0.8f));   // гамма и затухание к краям
+    set_level(self, i, (uint8_t)(255.0f * std::max(0.0f, v)));
+  }
+  self->show();
+
+  t += 0.08f * speed_k(self);
+  if (t > 1000.0f) t = 0;
+  self->wait(20);
+}
+
+// новогодняя гирлянда: несколько праздничных цветов живут на ленте, каждый диод
+// дышит сам по себе, а раз в 90 кадров цвета меняются и переезжают на другие места
+static void new_year_garland(led *self, void *)
+{
+  // палитра задана в явном RGB: у WS2812 зелёный самый яркий, синий самый
+  // тусклый, поэтому зелёный приглушён, а в синий добавлен баланс каналов
+  static const rgb8_t warm_red[] = {
+    {255,   0,   0},   // красный
+    {255,  60,  20},   // алый
+    {255, 110,   0},   // оранжевый
+  };
+  static const rgb8_t warm_soft[] = {
+    {255, 60,   0},   // золотой
+    {255, 210,  0},   // тёплый жёлтый
+  };
+  static const rgb8_t cool[] = {
+    {  0, 255,   0},   // зелёный
+    {  0, 200, 100},   // бирюзовый
+    {  0,  10, 255},   // синий
+    {120,   0, 250},   // фиолетовый
+  };
+  const uint8_t NR = sizeof(warm_red) / sizeof(warm_red[0]);
+  const uint8_t NS = sizeof(warm_soft) / sizeof(warm_soft[0]);
+  const uint8_t NC = sizeof(cool) / sizeof(cool[0]);
+  const uint8_t P = 4;                             // сколько цветов одновременно
+
+  static std::vector<uint16_t> ph;                 // фаза дыхания каждого диода
+  static std::vector<uint8_t> steps, amp, offi;    // скорость, амплитуда, «тёмная» пауза
+  static std::vector<uint8_t> ci, nci;             // текущий цвет и назначенный
+  static std::vector<uint8_t> cr, cg, cb;          // RGB, который сейчас горит
+  static rgb8_t pal[P];
+  static uint8_t tick = 0;
+  static bool started = false;
+  uint16_t count = self->get_count_led();
+
+  if (ph.size() != count) {
+    ph.assign(count, 0);
+    steps.assign(count, 0);
+    amp.assign(count, 0);
+    offi.assign(count, 0);
+    ci.assign(count, 0);
+    nci.assign(count, 0);
+    cr.assign(count, 0);
+    cg.assign(count, 0);
+    cb.assign(count, 0);
+    for (uint16_t i = 0; i < count; i++) {
+      ph[i] = rnd(512);
+      steps[i] = 1 + rnd(4);
+      amp[i] = 140 + rnd(116);   // у каждого своя максимальная яркость
+      offi[i] = rnd(110);        // и своя длительность тёмной паузы
+    }
+    tick = 0;
+    started = false;
+  }
+
+  if (tick == 0) {
+    // красный есть в палитре всегда, плюс второй «горячий» и два мягких тёплых
+    pal[0] = warm_red[0];
+    pal[1] = warm_red[1 + rnd(NR - 1)];   // алый или оранжевый
+
+    uint8_t s0 = rnd(NS), s1;
+    do { s1 = rnd(NS); } while (s1 == s0);
+    pal[2] = warm_soft[s0];
+    pal[3] = warm_soft[s1];
+
+    // редкий приглушённый холодный акцент, чтобы не перебивал тёплую гамму
+    if (rnd(100) < 20) {
+      rgb8_t c = cool[rnd(NC)];
+      rgb8_t dim = {(uint8_t)(c.r * 0.5f), (uint8_t)(c.g * 0.5f), (uint8_t)(c.b * 0.5f)};
+      pal[rnd(P)] = dim;
+    }
+
+    for (uint16_t i = 0; i < count; i++) nci[i] = rnd(P);
+
+    // при первом запуске сразу раскрашиваем, чтобы лента не стояла чёрной
+    if (!started) {
+      for (uint16_t i = 0; i < count; i++) {
+        ci[i] = nci[i];
+        rgb8_t c = pal[ci[i]];
+        cr[i] = c.r;
+        cg[i] = c.g;
+        cb[i] = c.b;
+      }
+      started = true;
+    }
+  }
+  tick = (tick + 1) % 90;
+
+  for (uint16_t i = 0; i < count; i++) {
+    uint16_t tri = ph[i] < 256 ? ph[i] : 511 - ph[i];
+    uint16_t d = tri > offi[i] ? tri - offi[i] : 0;        // сначала посидеть погасшим
+    uint8_t lvl = (uint8_t)(d * 255 / (255 - offi[i]));
+    lvl = (uint8_t)((uint16_t)lvl * lvl / 255);            // мягкий низ
+    lvl = (uint8_t)((uint16_t)lvl * amp[i] / 255);         // своя амплитуда
+
+    // новый цвет примеряем только когда диод полностью погас —
+    // поэтому смена палитры не видна глазом, нет рывка на ярком
+    bool pending = ci[i] != nci[i];
+    if (lvl == 0) {
+      ci[i] = nci[i];
+      rgb8_t c = pal[ci[i]];
+      cr[i] = c.r;
+      cg[i] = c.g;
+      cb[i] = c.b;
+      pending = false;
+    }
+
+    self->set_pixel(i, cr[i] * lvl / 255, cg[i] * lvl / 255, cb[i] * lvl / 255);
+
+    // пока цвет не обновлён — подгоняем фазу, чтобы диод ушёл в темноту
+    // и принял новую палитру в пределах одного цикла, а не висел со старым
+    ph[i] = (ph[i] + steps[i] + (pending ? 4 : 0)) % 512;
+  }
+  self->show();
+  self->wait(frame_ms(self, 40, 10));
+}
+
 void register_builtin_effects(led *self)
 {
   self->add_effect(1,   "Радуга",         true,  &rainbow);
@@ -563,6 +786,11 @@ void register_builtin_effects(led *self)
   self->add_effect(18,  "Театр",          true,  &theater_rainbow);
   self->add_effect(19,  "Цветная заливка", true, &color_wipe);
   self->add_effect(20,  "Мигалка",        true,  &police);
+  self->add_effect(21,  "Салют",          true,  &fireworks);
+  self->add_effect(22,  "Перелив цвета",  true,  &color_fade);
+  self->add_effect(23,  "Гирлянда",       true,  &garland);
+  self->add_effect(24,  "Туннель",        true,  &tunnel);
+  self->add_effect(25,  "Новогодняя гирлянда", true, &new_year_garland);
   self->add_effect(253, "Ручной",         false, &manual);
   self->add_effect(254, "Статичный цвет", false, &static_color);
   self->add_effect(255, "Выкл",           false, &off);

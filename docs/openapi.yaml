@@ -682,7 +682,7 @@ components:
     LedSettings:
       type: object
       properties:
-        led_count: { type: integer, minimum: 1, description: "Количество светодиодов (NVS)" }
+        led_count: { type: integer, minimum: 1, maximum: 3000, description: "Количество светодиодов (NVS), 1..3000" }
         save_mode: { type: boolean, description: "Разрешить сохранение ручного состояния ленты в NVS. Автоматика и leds_arr не пишут; включение флага само по себе состояние не сохраняет" }
         manual: { type: boolean, description: "Режим управления: true — ручной (автоматика заблокирована), false — автоматика. Хранится в NVS и применяется при старте" }
         led_model: { type: string, enum: [ws2812, ws2815], description: "Тип ленты (NVS). Смена пересоздаёт ленту без перезагрузки" }
@@ -793,7 +793,7 @@ components:
         action:
           type: object
           properties:
-            hold: { type: integer, minimum: 0, description: "Сек держать ленту; 0 — до повторного нажатия (только с repeat release)" }
+            hold: { type: integer, minimum: 0, maximum: 7200, description: "Сек держать ленту, 0..7200; 0 — до повторного нажатия (только с repeat release)" }
             repeat:
               type: string
               enum: [extend, release]
@@ -828,7 +828,7 @@ components:
         action:
           type: object
           properties:
-            hold: { type: integer, minimum: 1, default: 30, description: "Сек, сколько держать ленту после движения" }
+            hold: { type: integer, minimum: 1, maximum: 7200, default: 30, description: "Сек, сколько держать ленту после движения, 1..7200" }
             light_sensor:
               type: object
               properties:

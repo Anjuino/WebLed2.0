@@ -111,6 +111,10 @@ class led {
     uint16_t get_count_led(void) { return led_count; };
     std::tuple<uint8_t, uint8_t, uint8_t> get_color() { return {r, g, b}; };
 
+    // Верхняя граница количества диодов. Ограничение защищает от переполнения
+    // буфера ленты и от boot-loop, если в NVS окажется слишком большое значение.
+    static constexpr uint16_t MAX_LED_COUNT = 3000;
+
     bool update_led_count(uint16_t new_count);
 
     // тип ленты и порядок цветов; сохраняется в NVS, лента пересоздаётся задачей Led.
