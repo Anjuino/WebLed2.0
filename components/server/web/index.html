@@ -2485,6 +2485,13 @@ function normalize(k) {
   c.action = c.action || {};
   c.action.led = Object.assign({}, d.action.led, c.action.led);
   c.action.led.color = Object.assign({}, d.action.led.color, c.action.led.color);
+  // раньше поля времени писались в c.start/c.end мимо action.time — переносим,
+  // чтобы уже настроенное окно не откатывалось к значению по умолчанию
+  if (c.start && c.end) {
+    c.action.time = { start: c.start, end: c.end };
+    delete c.start;
+    delete c.end;
+  }
   if ((k === 'button' || k === 'motion') && c.action.hold == null) c.action.hold = d.action.hold;
   if (k === 'motion' && c.action.light_sensor) {
     if (c.action.light_sensor.dark == null) c.action.light_sensor.dark = 300;
@@ -2576,7 +2583,7 @@ function cardHtml(k) {
         <span class="row"><span class="muted" data-tlabel="${k}"></span>
         <label class="sw" title="Только в заданное время"><input type="checkbox" data-time="${k}" ${t ? 'checked' : ''}><span></span></label></span></div>
       <div class="trow" data-trow="${k}" ${t ? '' : 'hidden'}>
-        <input type="time" data-tpart="${k}.start" value="${hm(t && t.start)}"> — <input type="time" data-tpart="${k}.end" value="${hm(t && t.end)}">
+        <input type="time" data-tpart="${k}.action.time.start" value="${hm(t && t.start)}"> — <input type="time" data-tpart="${k}.action.time.end" value="${hm(t && t.end)}">
       </div>
       <div class="tl" data-tl="${k}"></div>
       <div class="ticks"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
