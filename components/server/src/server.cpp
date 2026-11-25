@@ -200,7 +200,7 @@ esp_err_t server::start() {
   mdns_hostname_set(hostname.c_str());
   mdns_instance_name_set(hostname.c_str());
 
-  const char *service_proto = "tcp";
+  const char *service_proto = "_tcp";
 #ifdef CONFIG_SERVER_HTTPS
   const uint16_t service_port = 443;
 #else
